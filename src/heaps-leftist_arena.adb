@@ -20,18 +20,18 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
    -- Allocation          --
    --------------------------
 
-   procedure Allocate (I : out Slot)
+   procedure Allocate (I : out Slot; K : Key_Type)
      with Pre  => Valid and then Room >= 1,
           Post => Valid
                   and then In_Use (Snap, I)
                   and then Room = Room'Old - 1
-                  and then Keys = Snap'Old.Keys
+                  and then Keys (I) = K
+                  and then Sub (I) = KM.Add (KM.Empty_Multiset, K)
                   and then Links (I).Left = 0
                   and then Links (I).Right = 0
                   and then Links (I).Parent = 0
                   and then Links (I).Size = 1
                   and then Links (I).Dist = 1
-                  and then KM.Is_Empty (Sub (I))
 
                   --  Every node that was in use is untouched, model included
 
@@ -39,13 +39,17 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
                               (if In_Use (Snap'Old, X)
                                then X /= I
                                     and then In_Use (Snap, X)
+                                    and then Keys (X) = Snap'Old.Keys (X)
                                     and then Links (X) = Snap'Old.Links (X)
                                     and then Sub (X) = Snap'Old.Sub (X)));
-   --  Take the head of the free chain and hand it back as a one-node tree with
-   --  an empty subtree model, ready for a key to be stored in it.
+   --  Take the head of the free chain and hand it back as a one-node tree
+   --  holding K. The key goes in here rather than in the caller because a node
+   --  in use is required to carry a cached model that matches its key, so an
+   --  allocation that left the key unset would leave the arena invalid.
 
    procedure Deallocate (I : Slot)
      with Pre  => Valid
+                  and then Room < Capacity
                   and then In_Use (Snap, I)
                   and then Links (I).Left = 0
                   and then Links (I).Right = 0
@@ -140,7 +144,7 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
    -- Allocate --
    --------------
 
-   procedure Allocate (I : out Slot) is
+   procedure Allocate (I : out Slot; K : Key_Type) is
       Before : constant Snapshot := Snap with Ghost;
       Head   : constant Slot := Free;
       Next   : constant Tree := Links (Head).Left;
@@ -155,15 +159,19 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       pragma Assert
         (for all X in 1 .. Capacity =>
            (if not In_Use (Before, X) and then X /= Head
-            then Chain_Pos (X) <= Free_Count - 1));
+            then Chain_Pos (X) in 1 .. Capacity
+                 and then Chain_At (Chain_Pos (X)) = X
+                 and then Chain_Pos (X) /= Free_Count
+                 and then Chain_Pos (X) <= Free_Count - 1));
 
       Free       := Next;
       Free_Count := Free_Count - 1;
 
       Chain_Pos (Head) := 0;
+      Keys (Head) := K;
       Links (Head) :=
         (Left => 0, Right => 0, Parent => 0, Size => 1, Dist => 1);
-      Sub (Head) := KM.Empty_Multiset;
+      Sub (Head) := KM.Add (KM.Empty_Multiset, K);
 
       --  Nothing in use pointed at the head, because a free node's Left is a
       --  free node and every used node's links are used nodes.
@@ -190,6 +198,7 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       Links (I).Left   := Free;
       Free_Count       := Free_Count + 1;
       Chain_Pos (I)    := Free_Count;
+      Chain_At (Free_Count) := I;
       Free             := I;
 
       --  I was in use, so no free node's Left named it and it is genuinely a
@@ -219,22 +228,53 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
    begin
       --  Thread every slot onto the free chain, the last slot at the head, so
       --  that a slot's position along the chain is its own index.
+      --
+      --  Written as aggregates rather than a loop. The loop version needed an
+      --  invariant, and the postcondition then rested on carrying that
+      --  invariant out of the loop -- one large goal that sat on the prover's
+      --  time limit and went through or not depending on how loaded the run
+      --  was. An iterated component association defines every element
+      --  directly, so there is nothing to carry.
 
-      for J in 1 .. Capacity loop
-         Links (J) :=
-           (Left => (if J = 1 then 0 else J - 1),
-            Right => 0, Parent => 0, Size => 0, Dist => 0);
-         Chain_Pos (J) := J;
-         Sub (J) := KM.Empty_Multiset;
+      Links :=
+        [for J in 1 .. Capacity =>
+           (Left   => (if J = 1 then 0 else J - 1),
+            Right  => 0,
+            Parent => 0,
+            Size   => 0,
+            Dist   => 0)];
 
-         pragma Loop_Invariant
-           (for all X in 1 .. J =>
-              Chain_Pos (X) = X
-              and then Links (X).Left = (if X = 1 then 0 else X - 1));
-      end loop;
+      Chain_Pos := [for J in 1 .. Capacity => J];
+      Chain_At  := [for J in 1 .. Capacity => J];
+      Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
 
       Free       := Capacity;
       Free_Count := Capacity;
+
+      --  One clause of Valid at a time, so that none of them is a large
+      --  verification condition.
+
+      pragma Assert (Chain_Pos (Free) = Free_Count);
+      pragma Assert (for all I in 1 .. Capacity => not In_Use (Snap, I));
+      pragma Assert
+        (for all K in 1 .. Capacity =>
+           Chain_At (K) in 1 .. Capacity
+           and then Chain_Pos (Chain_At (K)) = K);
+      pragma Assert
+        (for all I in 1 .. Capacity =>
+           Chain_Pos (I) in 1 .. Capacity
+           and then Chain_Pos (I) <= Free_Count
+           and then Chain_At (Chain_Pos (I)) = I);
+      pragma Assert
+        (for all I in 1 .. Capacity =>
+           (if Chain_Pos (I) = 1
+            then Links (I).Left = 0
+            else Links (I).Left /= 0
+                 and then Chain_Pos (Links (I).Left) = Chain_Pos (I) - 1));
+      pragma Assert (for all I in 1 .. Capacity => Node_Free (Snap, I));
+
+      pragma Assert (Chain_Sound (Snap));
+      pragma Assert (Nodes_Sound (Snap));
    end Clear;
 
    -------------
@@ -255,6 +295,9 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
    -----------
 
    procedure Merge (A, B : Tree; R : out Tree) is
+      Was   : Extended_Index with Ghost;
+      --  The size of Top before its right subtree is cut loose
+
       Top   : Slot;
       Other : Slot;
       Rest  : Tree;
@@ -288,6 +331,7 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       --  has just left it becomes a tree of its own. The cached model of Top
       --  is brought down with its Size, by the same assignment.
 
+      Was  := Links (Top).Size;
       Rest := Links (Top).Right;
 
       if Rest /= 0 then
@@ -305,6 +349,7 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       --  The detached subtree is strictly smaller than the node it left, so
       --  the bound the contract carries still holds one level down.
 
+      pragma Assert (Was = 1 + Size_Now (Links (Top).Left) + Size_Now (Rest));
       pragma Assert (Size_Now (Rest) + Size_Now (Other) <= Capacity);
 
       Merge (Rest, Other, Sub_R);
@@ -360,9 +405,7 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       New_Root : Tree;
       Before   : constant Tree := T;
    begin
-      Allocate (Node);
-      Keys (Node) := K;
-      Sub (Node) := KM.Add (KM.Empty_Multiset, K);
+      Allocate (Node, K);
 
       pragma Assert (Before /= Node);
 
@@ -379,6 +422,8 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
 
    procedure Extract_Min (T : in out Tree; K : out Key_Type) is
       Gone     : constant Slot := T;
+      Held     : constant Extended_Index := Links (T).Size with Ghost;
+      --  What the tree held before its root was cut away
       Left     : constant Tree := Links (Gone).Left;
       Right    : constant Tree := Links (Gone).Right;
       New_Root : Tree;
@@ -397,14 +442,20 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
          Links (Right).Parent := 0;
       end if;
 
-      Links (Gone) := (Left => 0, Right => 0, Parent => 0, Size => 0,
-                       Dist => 0);
-      Sub (Gone) := KM.Empty_Multiset;
+      --  Cutting the children off leaves Gone a one-node tree, so its size and
+      --  its cached model have to say so: a node still in use whose Size were
+      --  0, or whose model did not match its key, would make the arena
+      --  invalid between here and the release below.
+
+      Links (Gone) := (Left => 0, Right => 0, Parent => 0, Size => 1,
+                       Dist => 1);
+      Sub (Gone) := KM.Add (KM.Empty_Multiset, Keys (Gone));
 
       Deallocate (Gone);
 
       --  The two subtrees together held one node fewer than the tree did.
 
+      pragma Assert (Size_Now (Left) + Size_Now (Right) = Held - 1);
       pragma Assert (Size_Now (Left) + Size_Now (Right) <= Capacity);
 
       Merge (Left, Right, New_Root);

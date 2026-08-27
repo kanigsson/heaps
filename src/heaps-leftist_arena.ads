@@ -154,7 +154,10 @@ package Heaps.Leftist_Arena with SPARK_Mode is
      with Pre => Valid and then Is_Root (T) and then T /= 0;
 
    procedure Insert (T : in out Tree; K : Key_Type)
-     with Pre  => Valid and then Is_Root (T) and then Room >= 1,
+     with Pre  => Valid
+                  and then Is_Root (T)
+                  and then Room >= 1
+                  and then Size_Of (T) < Capacity,
           Post => Valid
                   and Is_Root (T)
                   and Room = Room'Old - 1
@@ -172,7 +175,10 @@ package Heaps.Leftist_Arena with SPARK_Mode is
                                and then Model (Snap, U) = Model (Snap'Old, U)));
 
    procedure Extract_Min (T : in out Tree; K : out Key_Type)
-     with Pre  => Valid and then Is_Root (T) and then T /= 0,
+     with Pre  => Valid
+                  and then Is_Root (T)
+                  and then T /= 0
+                  and then Room < Capacity,
           Post => Valid
                   and Is_Root (T)
                   and Room = Room'Old + 1
@@ -185,11 +191,20 @@ package Heaps.Leftist_Arena with SPARK_Mode is
                           then Is_Root (Snap, U)
                                and then Model (Snap, U) = Model (Snap'Old, U)));
 
+   --  Room < Capacity says the arena is not wholly empty, which T /= 0 makes
+   --  obvious and the flat invariant cannot show. Chain_At and Chain_Pos are
+   --  inverses, so the free nodes are in bijection with 1 .. Room and a node
+   --  in use leaves at most Capacity - 1 of them -- but that is pigeonhole,
+   --  and counting the image of an injection is the argument this invariant
+   --  is built to avoid. It is asked of the caller for the same reason the
+   --  size bound on Meld is.
+
    procedure Meld (T : in out Tree; U : in out Tree)
      with Pre  => Valid
                   and then Is_Root (T)
                   and then Is_Root (U)
-                  and then (if T /= 0 and then U /= 0 then T /= U),
+                  and then (if T /= 0 and then U /= 0 then T /= U)
+                  and then Size_Of (T) + Size_Of (U) <= Capacity,
           Post => Valid
                   and Is_Root (T)
                   and U = 0
@@ -202,6 +217,16 @@ package Heaps.Leftist_Arena with SPARK_Mode is
                              and then Is_Root (Snap'Old, W)
                           then Is_Root (Snap, W)
                                and then Model (Snap, W) = Model (Snap'Old, W)));
+   --  The size bound is asked of the caller rather than derived. That two
+   --  distinct trees of an arena of Capacity nodes hold at most Capacity keys
+   --  between them is true, but it is a counting argument about their nodes
+   --  being disjoint, and the invariant here is deliberately flat: it relates
+   --  a node to its immediate neighbours and says nothing about which nodes
+   --  belong to which tree. PROOF.md reaches the same conclusion about the
+   --  same arithmetic and gives the same answer -- carry the bound in the
+   --  contract, where it is pure arithmetic, rather than derive it from the
+   --  invariant. A caller always knows how many keys it put in.
+   --
    --  Destructive meld, and the point of the unit: T receives every key of U,
    --  which ceases to exist. No node is allocated, freed or copied -- Room is
    --  unchanged -- and the work is a walk down the two right spines, so this
@@ -233,6 +258,7 @@ private
       Free_Count : Extended_Index := 0;
       Sub        : Model_Array (1 .. Capacity);
       Chain_Pos  : Chain_Array (1 .. Capacity);
+      Chain_At   : Chain_Array (1 .. Capacity);
    end record;
    --  A whole arena as one value, for contracts to compare two states. The
    --  type is ghost, so the real state cannot be an object of it -- SPARK has
@@ -254,6 +280,13 @@ private
    --  the cache that lets a tree's model be a lookup, and it is maintained
    --  wherever Size is.
 
+   Chain_At : Chain_Array (1 .. Capacity) with Ghost;
+   --  The inverse of Chain_Pos: Chain_At (K) is the node at position K. Two
+   --  arrays that are inverses of one another give injectivity in one step,
+   --  where stating it directly needs a quantifier over pairs of nodes -- and
+   --  Valid is the hypothesis of nearly every proof in the unit, so an O(n^2)
+   --  clause in it is paid for everywhere.
+
    Chain_Pos : Chain_Array (1 .. Capacity) with Ghost;
    --  0 if the node is in use, otherwise its one-based position along the free
    --  chain counting from the far end, so that the head holds Free_Count. It
@@ -267,7 +300,8 @@ private
        Free       => Free,
        Free_Count => Free_Count,
        Sub        => Sub,
-       Chain_Pos  => Chain_Pos));
+       Chain_Pos  => Chain_Pos,
+       Chain_At   => Chain_At));
 
    function In_Use (S : Snapshot; I : Slot) return Boolean is
      (S.Chain_Pos (I) = 0);
@@ -314,6 +348,7 @@ private
                    + Size_Of_Node (S, S.Links (I).Right)
       and then S.Links (I).Dist = 1 + Dist_Of (S, S.Links (I).Right)
       and then S.Links (I).Dist <= S.Links (I).Size
+      and then S.Links (I).Size <= Capacity
       and then Dist_Of (S, S.Links (I).Left)
                >= Dist_Of (S, S.Links (I).Right)
 
@@ -352,7 +387,9 @@ private
 
    function Node_Free (S : Snapshot; I : Slot) return Boolean is
      (S.Links (I).Left in 0 .. Capacity
+      and then S.Chain_Pos (I) in 1 .. Capacity
       and then S.Chain_Pos (I) <= S.Free_Count
+      and then S.Chain_At (S.Chain_Pos (I)) = I
       and then (if S.Chain_Pos (I) = 1
                 then S.Links (I).Left = 0
                 else S.Links (I).Left /= 0
@@ -362,25 +399,42 @@ private
    --  Everything asked of a node on the free chain: it is at some position
    --  along it, and the node it points at is one step nearer the far end.
 
-   function Valid (S : Snapshot) return Boolean is
+   function Chain_Sound (S : Snapshot) return Boolean is
      (S.Free in 0 .. Capacity
       and then S.Free_Count <= Capacity
       and then (S.Free = 0) = (S.Free_Count = 0)
       and then (if S.Free /= 0 then S.Chain_Pos (S.Free) = S.Free_Count)
-      and then (for all I in 1 .. Capacity =>
-                  (if In_Use (S, I)
-                   then Node_In_Use (S, I)
-                   else Node_Free (S, I)))
 
-      --  No two free nodes share a position, so the head is the only node at
-      --  the far end and popping it leaves every other position in range.
+      --  Chain_At and Chain_Pos are inverses over the chain, which is what
+      --  makes positions unique: two free nodes at the same position are both
+      --  Chain_At of it, and so are the same node. The head is therefore the
+      --  only node at the far end, and popping it leaves every other position
+      --  in range.
 
-      and then (for all I in 1 .. Capacity =>
-                  (for all J in 1 .. Capacity =>
-                     (if not In_Use (S, I)
-                         and then not In_Use (S, J)
-                         and then S.Chain_Pos (I) = S.Chain_Pos (J)
-                      then I = J))));
+      and then (for all K in 1 .. Capacity =>
+                  (if K <= S.Free_Count
+                   then S.Chain_At (K) in 1 .. Capacity
+                        and then S.Chain_Pos (S.Chain_At (K)) = K)))
+     with Ghost;
+
+   function Nodes_Sound (S : Snapshot) return Boolean is
+     (for all I in 1 .. Capacity =>
+        (if In_Use (S, I) then Node_In_Use (S, I) else Node_Free (S, I)))
+     with Ghost;
+
+   function Valid (S : Snapshot) return Boolean is
+     (Chain_Sound (S) and then Nodes_Sound (S));
+   --  Split in two so that establishing it is two moderate goals rather than
+   --  one large one. Neither half carries a precondition: PROOF.md records
+   --  that factoring a predicate into named pieces *with* preconditions made
+   --  a proof dramatically worse, because the defining axiom of a guarded
+   --  expression function does not unfold where the guard cannot be
+   --  rederived. Every bound these need is stated inside them.
+
+   --  Every bound a clause needs for its own indexing is stated in that
+   --  clause. Free_Count <= Capacity is a separate conjunct and is not
+   --  available inside one, so a position is bounded by Capacity there and
+   --  compared with Free_Count separately.
 
    function Is_Root (S : Snapshot; T : Tree) return Boolean is
      (T = 0 or else (In_Use (S, T) and then S.Links (T).Parent = 0));
