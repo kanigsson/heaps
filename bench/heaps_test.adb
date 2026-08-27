@@ -16,6 +16,7 @@ with Heaps.Block_Min;
 with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Leftist;
+with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
 with Heaps.Sorted;
 with Heaps.Unsorted;
@@ -30,6 +31,9 @@ procedure Heaps_Test is
 
    Block_Boundary_Sizes : constant array (1 .. 6) of Positive :=
      [255, 256, 257, 511, 512, 513];
+
+   Churn_Sizes : constant array (1 .. 6) of Positive :=
+     [1, 2, 3, 7, 64, 200];
 
    procedure Check (Condition : Boolean; Message : String);
    procedure Check (Condition : Boolean; Message : String) is
@@ -627,6 +631,316 @@ procedure Heaps_Test is
              "meld: binary empty after draining");
    end Test_Meld;
 
+   --  The arena: several trees sharing one pool. Heaps.Leftist_Pool is a
+   --  library-level instance of it, so the pool is package state rather than
+   --  an object, and every test below calls Clear first -- that, and nothing
+   --  else, is what keeps them independent of one another.
+   --
+   --  Two properties here have no analogue in the array heaps and so are
+   --  checked nowhere else in this program. Room is the arena's own
+   --  bookkeeping: nodes come off a free chain and go back onto it, and a leak
+   --  or a double release drifts the count long before it produces a wrong
+   --  answer. And the trees an operation does not name have to come back
+   --  untouched, which is the frame the arena's contracts claim and the reason
+   --  a meld can be a splice rather than a copy; checking it needs a bystander
+   --  tree, which a heap owning its own pool cannot have.
+   --
+   --  The arena has no Min_Of either. With several trees in one array there is
+   --  no range of slots holding a given tree's keys, so the oracle for "the
+   --  smallest key still in T" has to be kept by the test.
+
+   package Arena renames Heaps.Leftist_Pool;
+
+   procedure Test_Arena (N : Positive);
+   procedure Test_Arena (N : Positive) is
+      T     : Arena.Tree := 0;
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Top   : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      Arena.Clear;
+      Check (Arena.Room = Arena.Nodes, "arena: a cleared arena is all free");
+      Check (Arena.Is_Empty (T), "arena: the empty tree starts empty");
+
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Arena.Insert (T, K);
+         Check (Arena.Size_Of (T) = I, "arena: size after insert");
+         Check (Arena.Room = Arena.Nodes - I,
+                "arena: an insert takes exactly one node");
+      end loop;
+
+      for I in reverse 1 .. N loop
+         Top := Arena.Peek_Min (T);
+         Arena.Extract_Min (T, K);
+         Check (K = Top, "arena: extraction returns the key peek promised");
+         Check (K >= Prev, "arena: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+         Check (Arena.Size_Of (T) = I - 1, "arena: size after extraction");
+         Check (Arena.Room = Arena.Nodes - (I - 1),
+                "arena: an extraction gives exactly one node back");
+      end loop;
+
+      Check (Arena.Is_Empty (T), "arena: empty after draining");
+      Check (Arena.Room = Arena.Nodes, "arena: every node is back");
+      Check (Sum = Back, "arena: nothing lost on the way");
+   end Test_Arena;
+
+   procedure Test_Arena_Churn (N : Positive);
+   procedure Test_Arena_Churn (N : Positive) is
+      --  Alternating an extraction and an insertion keeps the free chain
+      --  moving: every extraction pushes a node back onto it and the next
+      --  insertion takes that node off again, so the slots are recycled over
+      --  and over. A stale link left behind in a recycled node, a leak, or a
+      --  node released twice all surface here rather than in a straight fill
+      --  and drain.
+      T     : Arena.Tree := 0;
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+
+      Held  : array (1 .. N) of Key_Type;
+      Count : Natural := 0;
+      --  The keys the tree ought to hold, unsorted. Scanning it is O(n) per
+      --  check, which is why this test runs over small sizes only.
+
+      procedure Hold (Key : Key_Type);
+      procedure Hold (Key : Key_Type) is
+      begin
+         Count := Count + 1;
+         Held (Count) := Key;
+      end Hold;
+
+      function Least return Key_Type;
+      function Least return Key_Type is
+         Best : Key_Type := Held (1);
+      begin
+         for I in 2 .. Count loop
+            if Held (I) < Best then
+               Best := Held (I);
+            end if;
+         end loop;
+         return Best;
+      end Least;
+
+      procedure Drop_Least;
+      procedure Drop_Least is
+         Where : Natural := 1;
+      begin
+         for I in 2 .. Count loop
+            if Held (I) < Held (Where) then
+               Where := I;
+            end if;
+         end loop;
+         Held (Where) := Held (Count);
+         Count := Count - 1;
+      end Drop_Least;
+   begin
+      Arena.Clear;
+
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 1_000);
+         Hold (K);
+         Arena.Insert (T, K);
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Check (Arena.Peek_Min (T) = Least,
+                "arena: churn keeps the smallest key on top");
+         Arena.Extract_Min (T, K);
+         Drop_Least;
+
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 1_000);
+         Hold (K);
+         Arena.Insert (T, K);
+
+         Check (Arena.Size_Of (T) = N, "arena: churn holds the size steady");
+         Check (Arena.Room = Arena.Nodes - N,
+                "arena: churn returns every node it takes");
+      end loop;
+
+      for I in 1 .. N loop
+         Arena.Extract_Min (T, K);
+         Check (K >= Prev, "arena: a churned tree still drains in order");
+         Prev := K;
+      end loop;
+
+      Check (Arena.Room = Arena.Nodes, "arena: churn leaked no node");
+   end Test_Arena_Churn;
+
+   procedure Sort (Keys : in out Key_Array; Last : Natural);
+   procedure Sort (Keys : in out Key_Array; Last : Natural) is
+   begin
+      for I in 2 .. Last loop
+         declare
+            V : constant Key_Type := Keys (I);
+            J : Natural := I - 1;
+         begin
+            while J >= 1 and then Keys (J) > V loop
+               Keys (J + 1) := Keys (J);
+               J := J - 1;
+            end loop;
+            Keys (J + 1) := V;
+         end;
+      end loop;
+   end Sort;
+
+   procedure Test_Arena_Meld (N, M : Natural);
+   procedure Test_Arena_Meld (N, M : Natural) is
+      Total    : constant Natural := N + M;
+      Bystands : constant Natural := 32;
+      --  A third tree, which neither operand of the meld names. The arena's
+      --  postcondition says every other tree of the pool keeps the model it
+      --  had; this is what checks it.
+
+      Into : Arena.Tree := 0;
+      From : Arena.Tree := 0;
+      Idle : Arena.Tree := 0;
+
+      Oracle : Key_Array (1 .. Total) :=
+        [others => 0];
+      Filled : Natural := 0;
+
+      Aside : Key_Array (1 .. Bystands) := [others => 0];
+
+      State  : Long_Long_Integer := 24_680_135;
+      K      : Key_Type;
+      Before : Extended_Index;
+      Prev   : Key_Type := Key_Type'First;
+
+      procedure Feed (Count : Natural; Target : in out Arena.Tree);
+      procedure Feed (Count : Natural; Target : in out Arena.Tree) is
+      begin
+         for I in 1 .. Count loop
+            State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+            K := Key_Type (State mod 100_000);
+            Filled := Filled + 1;
+            Oracle (Filled) := K;
+            Arena.Insert (Target, K);
+         end loop;
+      end Feed;
+   begin
+      Arena.Clear;
+
+      Feed (N, Into);
+      Feed (M, From);
+
+      for I in 1 .. Bystands loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Aside (I) := K;
+         Arena.Insert (Idle, K);
+      end loop;
+
+      Check (Arena.Room = Arena.Nodes - (Total + Bystands),
+             "arena meld: the three trees share the one pool");
+
+      --  A meld allocates, frees and copies nothing: it is a splice, and the
+      --  free count is the run-time witness of that. This is the property
+      --  that separates it from the append-and-rebuild melds above.
+
+      Before := Arena.Room;
+      Arena.Meld (Into, From);
+      Check (Arena.Room = Before, "arena meld: no node is allocated or freed");
+
+      Check (Arena.Size_Of (Into) = Total, "arena meld: size is the sum");
+      Check (Arena.Is_Empty (From), "arena meld: the source is emptied");
+
+      Sort (Oracle, Total);
+
+      for I in 1 .. Total loop
+         Arena.Extract_Min (Into, K);
+         Check (K = Oracle (I), "arena meld: drain matches the oracle");
+         Check (K >= Prev,
+                "arena meld: keys come out in non-decreasing order");
+         Prev := K;
+      end loop;
+
+      Check (Arena.Is_Empty (Into), "arena meld: empty after draining");
+
+      --  And the bystander is exactly as it was left.
+
+      Sort (Aside, Bystands);
+      Check (Arena.Size_Of (Idle) = Bystands,
+             "arena meld: the tree it did not name kept its size");
+
+      for I in 1 .. Bystands loop
+         Arena.Extract_Min (Idle, K);
+         Check (K = Aside (I),
+                "arena meld: the tree it did not name kept its keys");
+      end loop;
+
+      Check (Arena.Room = Arena.Nodes, "arena meld: every node is back");
+   end Test_Arena_Meld;
+
+   procedure Test_Arena_KWay (N, Ways : Positive);
+   procedure Test_Arena_KWay (N, Ways : Positive) is
+      --  What the arena is for: k trees in one pool folded into one
+      --  accumulator, each meld a splice of two right spines. A heap that owns
+      --  its pool cannot express this without copying k - 1 of the operands
+      --  into the survivor.
+      Each  : constant Positive := Positive'Max (1, N / Ways);
+      Total : constant Natural := Each * Ways;
+
+      Acc   : Arena.Tree := 0;
+      Ops   : array (1 .. Ways) of Arena.Tree := [others => 0];
+
+      Oracle : Key_Array (1 .. Total) := [others => 0];
+      Filled : Natural := 0;
+
+      State  : Long_Long_Integer := 13_579_246;
+      K      : Key_Type;
+      Before : Extended_Index;
+      Prev   : Key_Type := Key_Type'First;
+   begin
+      Arena.Clear;
+
+      for W in Ops'Range loop
+         for I in 1 .. Each loop
+            State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+            K := Key_Type (State mod 100_000);
+            Filled := Filled + 1;
+            Oracle (Filled) := K;
+            Arena.Insert (Ops (W), K);
+         end loop;
+      end loop;
+
+      Check (Arena.Room = Arena.Nodes - Total,
+             "arena k-way: every operand is in the one pool");
+
+      Before := Arena.Room;
+
+      for W in Ops'Range loop
+         Arena.Meld (Acc, Ops (W));
+         Check (Arena.Is_Empty (Ops (W)),
+                "arena k-way: the operand is emptied");
+         Check (Arena.Size_Of (Acc) = Each * W,
+                "arena k-way: the accumulator grows by one operand");
+      end loop;
+
+      Check (Arena.Room = Before, "arena k-way: the folding moved no node");
+
+      Sort (Oracle, Total);
+
+      for I in 1 .. Total loop
+         Arena.Extract_Min (Acc, K);
+         Check (K = Oracle (I), "arena k-way: drain matches the oracle");
+         Check (K >= Prev,
+                "arena k-way: keys come out in non-decreasing order");
+         Prev := K;
+      end loop;
+
+      Check (Arena.Room = Arena.Nodes, "arena k-way: every node is back");
+   end Test_Arena_KWay;
+
 
 begin
    --  Exercise both sides of full and partial 256-key blocks. In particular,
@@ -643,11 +957,23 @@ begin
       Test_Leftist_Churn (N);
    end loop;
 
+   --  The arena churns for a different reason, and over fewer sizes. What the
+   --  sweep above is after is the layer and level boundaries of an implicit
+   --  tree, which the arena does not have; what matters here is that slots go
+   --  back onto the free chain and come off it again, and a handful of sizes
+   --  exercise that as well as two hundred would -- while sparing the suite
+   --  two hundred clears of a pool whose size has nothing to do with the size
+   --  being tested.
+   for N of Churn_Sizes loop
+      Test_Arena_Churn (N);
+   end loop;
+
    for N of Sizes loop
       Test_Binary (N);
       Test_Block_Min (N);
       Test_Weak (N);
       Test_Leftist (N);
+      Test_Arena (N);
       Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);
@@ -672,6 +998,21 @@ begin
       Test_Meld (0, N, 3);
    end loop;
    Test_Meld (0, 0, 2);
+
+   --  The arena's own meld, over the same shapes. It gets a k-way fold as
+   --  well: with one pool holding every operand, folding k trees into one is
+   --  the workload the structure exists for, and it is the case a heap that
+   --  owns its pool cannot run without copying.
+   for N of Sizes loop
+      Test_Arena_Meld (N, N);
+      Test_Arena_Meld (N, 1);
+      Test_Arena_Meld (1, N);
+      Test_Arena_Meld (N, 0);
+      Test_Arena_Meld (0, N);
+      Test_Arena_KWay (N, 16);
+   end loop;
+   Test_Arena_Meld (0, 0);
+   Test_Arena_KWay (1, 16);
 
    if Failures = 0 then
       Put_Line ("all heap tests passed");
