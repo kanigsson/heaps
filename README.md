@@ -74,7 +74,7 @@ against. Implemented and proved so far:
 |------|:----:|------|
 | Unsorted array | yes | O(m), a copy and nothing to repair |
 | Binary heap | yes | O(n + m), append then rebuild bottom-up |
-| d-ary heap | no | as the binary heap, via the same generic |
+| d-ary heap | yes | O(n + m), as the binary heap |
 | Sorted array | no | O(n + m), the merge of two sorted runs |
 | Weak heap | no | append then rebuild |
 | Min-max heap | no | append then rebuild |
@@ -86,6 +86,15 @@ against. Implemented and proved so far:
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
 would flatter the mergeable structures instead of giving them a fair opponent.
+
+The sorted array is the one entry whose meld is not an append and a rebuild but
+a merge of two runs, and it needs something the others do not. Halfway through a
+merge the array holds three regions -- the part of the original run not yet
+consumed, the part already consumed and not yet overwritten, and the merged
+output -- and the multiset model of this collection is a scan of an array
+*prefix*, which cannot describe that. Giving it one means adding a range-model
+to `Heaps.Models` and the lemmas to go with it, which is shared machinery none
+of the other melds need.
 
 The leftist heap is the open question. Its internal merge already takes two
 roots inside one pool, but the exported `Heap` bundles the pool with the

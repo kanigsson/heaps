@@ -506,14 +506,16 @@ procedure Heaps_Test is
    --  cases -- a large heap receiving a tiny one and the reverse -- are
    --  covered as well as the balanced one.
 
-   procedure Test_Meld (N, M : Natural);
-   procedure Test_Meld (N, M : Natural) is
+   procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
+   procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
       Total : constant Natural := N + M;
 
       A_Into : Heaps.Unsorted.Heap (Extended_Index (Total));
       A_From : Heaps.Unsorted.Heap (Extended_Index (Total));
       B_Into : Heaps.Binary.Heap (Extended_Index (Total));
       B_From : Heaps.Binary.Heap (Extended_Index (Total));
+      D_Into : Heaps.Dary.Heap (Extended_Index (Total), Arity);
+      D_From : Heaps.Dary.Heap (Extended_Index (Total), Arity);
 
       Oracle : array (1 .. Total) of Key_Type;
       Filled : Natural := 0;
@@ -522,6 +524,7 @@ procedure Heaps_Test is
       K     : Key_Type;
       A_Key : Key_Type;
       B_Key : Key_Type;
+      D_Key : Key_Type;
       Prev  : Key_Type := Key_Type'First;
 
       procedure Feed (Count : Natural; Into_Target : Boolean);
@@ -537,9 +540,11 @@ procedure Heaps_Test is
             if Into_Target then
                Heaps.Unsorted.Insert (A_Into, K);
                Heaps.Binary.Insert (B_Into, K);
+               Heaps.Dary.Insert (D_Into, K);
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
+               Heaps.Dary.Insert (D_From, K);
             end if;
          end loop;
       end Feed;
@@ -549,6 +554,7 @@ procedure Heaps_Test is
 
       Heaps.Unsorted.Meld (A_Into, A_From);
       Heaps.Binary.Meld (B_Into, B_From);
+      Heaps.Dary.Meld (D_Into, D_From);
 
       Check (Heaps.Unsorted.Size (A_Into) = Total,
              "meld: unsorted size is the sum");
@@ -558,6 +564,8 @@ procedure Heaps_Test is
              "meld: unsorted source is emptied");
       Check (Heaps.Binary.Is_Empty (B_From),
              "meld: binary source is emptied");
+      Check (Heaps.Dary.Size (D_Into) = Total, "meld: d-ary size is the sum");
+      Check (Heaps.Dary.Is_Empty (D_From), "meld: d-ary source is emptied");
 
       --  Sort the oracle so that the drain order can be compared against it
 
@@ -578,12 +586,18 @@ procedure Heaps_Test is
          Check (Heaps.Binary.Peek_Min (B_Into) = Heaps.Binary.Min_Of (B_Into),
                 "meld: binary peek agrees with the array minimum");
 
+         Check (Heaps.Dary.Peek_Min (D_Into) = Heaps.Dary.Min_Of (D_Into),
+                "meld: d-ary peek agrees with the array minimum");
+
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
+         Heaps.Dary.Extract_Min (D_Into, D_Key);
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
-         Check (A_Key = B_Key, "meld: the two implementations agree");
+         Check (D_Key = Oracle (I), "meld: d-ary drain matches the oracle");
+         Check (A_Key = B_Key and A_Key = D_Key,
+                "meld: the implementations agree");
          Check (B_Key >= Prev, "meld: keys come out in non-decreasing order");
          Prev := B_Key;
       end loop;
@@ -630,13 +644,15 @@ begin
    --  Meld across a range of shapes: balanced, and both lopsided directions,
    --  including the two empty-operand cases.
    for N of Sizes loop
-      Test_Meld (N, N);
-      Test_Meld (N, 1);
-      Test_Meld (1, N);
-      Test_Meld (N, 0);
-      Test_Meld (0, N);
+      for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop
+         Test_Meld (N, N, Arity);
+      end loop;
+      Test_Meld (N, 1, 16);
+      Test_Meld (1, N, 16);
+      Test_Meld (N, 0, 3);
+      Test_Meld (0, N, 3);
    end loop;
-   Test_Meld (0, 0);
+   Test_Meld (0, 0, 2);
 
    if Failures = 0 then
       Put_Line ("all heap tests passed");

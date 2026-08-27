@@ -148,6 +148,21 @@ package Heaps.Dary with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Into.Arity = From.Arity
+                  and then Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Heap (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --  Word for word the binary heap's operation and, like it, an append
+   --  followed by a bottom-up rebuild at O(n + m). The arities have to agree:
+   --  two heaps of different arity have different tree shapes, so there is no
+   --  meaning to give the result.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)

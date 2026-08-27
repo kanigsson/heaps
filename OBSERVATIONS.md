@@ -349,10 +349,11 @@ extraction.
 
 ## Meld
 
-Two entries have the operation so far -- the binary heap, which rebuilds, and
-the unsorted array, which appends. See the Planned operations section of
-README.md for the rest, and for why the leftist heap, the structure the column
-exists for, is not here yet.
+Five entries have the operation so far: the binary heap and the three d-ary
+instances, which append and rebuild, and the unsorted array, which appends and
+repairs nothing. See the Planned operations section of README.md for the rest,
+and for why the leftist heap, the structure the column exists for, is not here
+yet.
 
 A single meld is too fast to time against the cost of building its operands, so
 both scenarios meld sixteen heaps into one accumulator and time the sixteen
@@ -364,41 +365,74 @@ one-key heaps into it.
 
 | heap | n | `meld-accumulate` | `meld-into-full` |
 |------|--:|------------------:|-----------------:|
-| binary | 1 000 | 956.25 | 948.75 |
-| binary | 10 000 | 13 577.06 | 13 277.06 |
-| binary | 100 000 | 146 126.38 | 172 334.82 |
-| binary | 1 000 000 | 1 419 552.48 | 1 742 740.80 |
+| binary | 1 000 | 1 037.56 | 985.69 |
+| binary | 10 000 | 13 705.19 | 13 682.69 |
+| binary | 100 000 | 144 479.44 | 174 584.88 |
+| binary | 1 000 000 | 1 422 271.68 | 1 728 768.96 |
+| 4-ary | 1 000 | 719.38 | 1 075.63 |
+| 4-ary | 10 000 | 7 010.69 | 10 498.25 |
+| 4-ary | 100 000 | 69 139.06 | 104 180.19 |
+| 4-ary | 1 000 000 | 711 929.60 | 1 076 158.40 |
+| 8-ary | 1 000 | 697.50 | 1 143.75 |
+| 8-ary | 10 000 | 6 751.94 | 11 228.25 |
+| 8-ary | 100 000 | 70 214.13 | 122 621.62 |
+| 8-ary | 1 000 000 | 734 911.12 | 1 268 246.48 |
+| 16-ary | 1 000 | 800.06 | 1 353.13 |
+| 16-ary | 10 000 | 7 786.94 | 13 349.56 |
+| 16-ary | 100 000 | 77 491.06 | 133 191.81 |
+| 16-ary | 1 000 000 | 775 543.04 | 1 340 156.88 |
 | unsorted | 1 000 | 47.50 | 3.75 |
-| unsorted | 10 000 | 445.00 | 3.13 |
+| unsorted | 10 000 | 454.38 | 3.13 |
 
-The binary heap's two columns are almost the same number, and that is the whole
-finding. `meld-accumulate` melds operands of `n / 16` keys; `meld-into-full`
-melds operands of *one* key. The work done differs by a factor of sixty
-thousand at `n = 1_000_000`, and the time does not differ at all -- it is
-slightly worse for the one-key operands. An implicit heap cannot splice, so it
-appends and rebuilds, and the rebuild is over the accumulator. What arrives is
-irrelevant; what is already there is what gets paid for.
+### The cost is set by the accumulator, not by the operand
+
+Every rebuilding heap spends about the same time on the two scenarios, and that
+is the finding. `meld-accumulate` melds operands of `n / 16` keys;
+`meld-into-full` melds operands of *one* key. At `n = 1_000_000` the work
+differs by a factor of sixty thousand and the time does not differ at all --
+`meld-into-full` is consistently the *slower* of the two, by 20% for the binary
+heap and 50% for the d-ary ones. An implicit heap cannot splice, so it appends
+and rebuilds, and the rebuild is over the accumulator. What arrives is
+irrelevant; what is already there is what gets paid for. The reason
+`meld-into-full` is worse rather than merely equal is that its accumulator is
+the full `n` from the first meld onwards, while `meld-accumulate` grows into it.
 
 The unsorted array is the other side of it. Appending one key to a
 million-key array is a store, so `meld-into-full` is 3.13 ns and flat in `n` --
-the same number at `n = 1_000` and `n = 10_000`, and it would be the same
-number at `n = 1_000_000`. Against the binary heap's 1.74 million nanoseconds
-per meld at that size, this is a factor of half a million, and none of it is
-constant-factor: it is O(1) against O(n).
+the same number at `n = 1_000` and at `n = 10_000`, and it would be the same at
+`n = 1_000_000`. Against the binary heap's 1.73 million nanoseconds per meld at
+that size this is a factor of half a million, and none of it is constant
+factor: it is O(1) against O(n).
 
 That is the shape a mergeable heap would show, which is what makes the
 degenerate baseline worth having in this column before the real thing arrives.
 The leftist heap would sit between the two -- O(log n) rather than the unsorted
 array's O(1) for a one-key operand, but O(log n) rather than O(n + m) for a
 large one, which is the case the unsorted array cannot win because its
-`Extract_Min` is linear. Until it is there, the column shows that the cost of a
+`Extract_Min` is linear. Until it is there, the column shows that the price of a
 meld on an implicit heap is set by the accumulator and not by the operand, and
 that this is not a small effect.
 
-`meld-accumulate` at `n = 1_000` is the one place the two are close: 956 ns
-against 47.50, a factor of twenty rather than thousands, because sixteen
-rebuilds of a heap growing to a thousand keys is still only a few thousand
-comparisons.
+### Arity reverses
+
+The main table has higher arity costing more: extraction scans all `d` children
+at every level, and `16-ary` pays 76.96 ns/op on `replace-forward` against the
+binary heap's 27.44. Meld reverses it. Every d-ary instance melds faster than
+the binary heap, by a factor of two on `meld-accumulate` at `n = 1_000_000`:
+711 929 ns for `4-ary` against 1 422 271 for `binary`.
+
+The reason is that a bottom-up rebuild sifts once per *internal* node, and a
+d-ary heap has `n / d` of them against the binary heap's `n / 2`. Fewer sifts,
+each over a tree of depth `log_d n` rather than `log_2 n`. Both effects favour
+higher arity, and the child scan that makes arity expensive for extraction is
+paid on far fewer nodes here.
+
+It does not go on reversing: `4-ary` and `8-ary` are close, and `16-ary` is
+slower than both, because the scan of sixteen children eventually outweighs
+having a sixteenth as many nodes to scan from. The optimum for this workload is
+somewhere around eight, which is roughly where the main table's `fill` column
+puts it too -- filling and rebuilding are the two operations here whose cost is
+dominated by sift-downs that mostly terminate early.
 
 ## Checksums
 
@@ -407,7 +441,7 @@ size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
 
 The meld scenarios are checksummed the same way, over a drain of the melded
-accumulator outside the timed phase, and the binary heap and the unsorted array
-agree at every size. Two implementations whose melds are a bottom-up rebuild
-and a block copy respectively have very little in common beyond the multiset
-they are supposed to produce, so the agreement is worth something.
+accumulator outside the timed phase, and all five entries agree at every size.
+Implementations whose melds are a bottom-up rebuild at four different arities
+and a block copy have very little in common beyond the multiset they are
+supposed to produce, so the agreement is worth something.
