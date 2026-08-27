@@ -153,6 +153,207 @@ package body Heaps.Binary with SPARK_Mode is
          Before (Hole));
    end Insert;
 
+   -------------------
+   -- Ordered_Below --
+   -------------------
+
+   function Ordered_Below (H : Heap; I : Extended_Index) return Boolean is
+     (for all J in 2 .. H.Last =>
+        (if Parent (J) >= I then H.Keys (Parent (J)) <= H.Keys (J)))
+     with Ghost;
+   --  Every subtree whose root is at index I or later is a heap. This is the
+   --  invariant a bottom-up build walks down: Ordered_Below (H, 1) is exactly
+   --  Is_Heap (H), and Ordered_Below (H, H.Last / 2 + 1) is vacuous because
+   --  such an index has no children inside the array.
+   --
+   --  Deliberately without a precondition: it appears as a hypothesis under
+   --  an implication, and an expression function guarded by a precondition
+   --  does not unfold there.
+
+   ---------------
+   -- Sift_Down --
+   ---------------
+
+   procedure Sift_Down (H : in out Heap; Start : Index)
+     with Pre  => Start < H.Last
+                  and then Ordered_Below (H, Start + 1),
+          Post => Ordered_Below (H, Start)
+                  and H.Last = H.Last'Old
+                  and Model (H) = Model (H)'Old;
+   --  Push the key at Start down until the subtree rooted there is a heap,
+   --  given that the subtrees below it already are. The hole travels down and
+   --  the key is stored once, as in Insert and Extract_Min.
+
+   procedure Sift_Down (H : in out Heap; Start : Index) is
+      Moved : constant Key_Type := H.Keys (Start);
+      M0    : constant KM.Multiset := Model (H) with Ghost;
+
+      Before : Key_Array := H.Keys with Ghost;
+      --  See the comment on the homonym in Insert
+
+      Hole  : Index := Start;
+      Child : Index;
+   begin
+      loop
+         exit when Hole > H.Last / 2;
+         --  Past that point the hole is a leaf and the descent is over
+
+         Child := 2 * Hole;
+
+         if Child < H.Last and then H.Keys (Child + 1) < H.Keys (Child) then
+            Child := Child + 1;
+         end if;
+
+         pragma Assert
+           (for all J in 2 .. H.Last =>
+              (if Parent (J) = Hole then H.Keys (Child) <= H.Keys (J)));
+
+         exit when H.Keys (Child) >= Moved;
+
+         Before := H.Keys;
+         H.Keys (Hole) := H.Keys (Child);
+
+         --  The same exchange argument as in Extract_Min, with the key to be
+         --  placed standing in for the extracted minimum: the array holds the
+         --  original model with Moved swapped for the stale key in the hole.
+
+         Models.Lemma_Set (Before, H.Keys, Hole, H.Last);
+         Models.Lemma_Add_Congruent
+           (KM.Add (Models.Occurrences (H.Keys, H.Last), Before (Hole)),
+            KM.Add (Models.Occurrences (Before, H.Last), Before (Child)),
+            Moved);
+         Models.Lemma_Add_Commutes
+           (Models.Occurrences (H.Keys, H.Last), Before (Hole), Moved);
+         Models.Lemma_Add_Commutes
+           (Models.Occurrences (Before, H.Last), Moved, Before (Child));
+         Models.Lemma_Add_Congruent
+           (KM.Add (Models.Occurrences (Before, H.Last), Moved),
+            KM.Add (M0, Before (Hole)),
+            Before (Child));
+         Models.Lemma_Add_Commutes (M0, Before (Hole), Before (Child));
+         Models.Lemma_Add_Cancels
+           (KM.Add (Models.Occurrences (H.Keys, H.Last), Moved),
+            KM.Add (M0, Before (Child)),
+            Before (Hole));
+
+         Hole := Child;
+
+         pragma Loop_Invariant (Hole in Start .. H.Last);
+         pragma Loop_Invariant (H.Last = H.Last'Loop_Entry);
+         pragma Loop_Invariant
+           (Before'First = 1 and Before'Last = H.Keys'Last);
+
+         --  The hole is a descendant of Start, so its parent is not above it
+
+         pragma Loop_Invariant (if Hole /= Start then Parent (Hole) >= Start);
+
+         --  The ordering holds throughout the subtree except at the hole,
+         --  whose content is stale and about to be overwritten.
+
+         pragma Loop_Invariant
+           (for all J in 2 .. H.Last =>
+              (if Parent (J) >= Start and then J /= Hole
+               then H.Keys (Parent (J)) <= H.Keys (J)));
+
+         --  The parent of the hole still dominates the children of the hole,
+         --  which is what keeps the ordering valid as the hole descends.
+
+         pragma Loop_Invariant
+           (for all J in 2 .. H.Last =>
+              (if Parent (J) = Hole and then Hole /= Start
+               then H.Keys (Parent (Hole)) <= H.Keys (J)));
+
+         --  And the key being carried down still fits above the hole
+
+         pragma Loop_Invariant
+           (if Hole /= Start then H.Keys (Parent (Hole)) <= Moved);
+
+         pragma Loop_Invariant
+           (KM.Add (Models.Occurrences (H.Keys, H.Last), Moved)
+            = KM.Add (M0, H.Keys (Hole)));
+
+         pragma Loop_Variant (Increases => Hole);
+      end loop;
+
+      Before := H.Keys;
+      H.Keys (Hole) := Moved;
+
+      --  Storing Moved in the hole puts back the key the descent was holding,
+      --  so the model returns to what it was.
+
+      Models.Lemma_Set (Before, H.Keys, Hole, H.Last);
+      Models.Lemma_Add_Cancels
+        (Models.Occurrences (H.Keys, H.Last), M0, Before (Hole));
+   end Sift_Down;
+
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Before : constant Key_Array := Into.Keys with Ghost;
+      Base   : constant Extended_Index := Into.Last;
+      Cap    : constant Extended_Index := Into.Capacity;
+
+      Joined : KM.Multiset with Ghost;
+      --  The model of the concatenation, which the rebuild has to preserve
+
+      Prev : Key_Array (1 .. Cap) := Into.Keys with Ghost;
+      --  See the comment on the homonym in Heaps.Unsorted.Meld
+   begin
+      --  Append the keys of From. This is the same argument as the unsorted
+      --  array's meld: the prefix does not move and each copied key joins the
+      --  sum in turn.
+
+      for I in 1 .. From.Last loop
+         Prev := Into.Keys;
+
+         Into.Keys (Base + I) := From.Keys (I);
+         Into.Last := Base + I;
+
+         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + I - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev, Base + I - 1),
+            Models.Occurrences (Into.Keys, Base + I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Before, Base),
+            Models.Occurrences (From.Keys, I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (for all J in 1 .. Base => Into.Keys (J) = Before (J));
+         pragma Loop_Invariant
+           (Model (Into)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+      end if;
+
+      Joined := Model (Into);
+
+      --  Rebuild bottom-up. An index past Last / 2 has no child inside the
+      --  array, so the invariant starts out vacuously true and is extended
+      --  one subtree at a time down to the root.
+
+      pragma Assert (Ordered_Below (Into, Into.Last / 2 + 1));
+
+      for I in reverse 1 .. Into.Last / 2 loop
+         Sift_Down (Into, I);
+
+         pragma Loop_Invariant (Ordered_Below (Into, I));
+         pragma Loop_Invariant (Into.Last = Base + From.Last);
+         pragma Loop_Invariant (Model (Into) = Joined);
+      end loop;
+
+      From.Last := 0;
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------

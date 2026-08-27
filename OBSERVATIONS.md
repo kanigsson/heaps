@@ -347,8 +347,67 @@ insertion. Descending input is already in storage order and needs no shifting.
 The unsorted array has constant-time insertion and scans the array for every
 extraction.
 
+## Meld
+
+Two entries have the operation so far -- the binary heap, which rebuilds, and
+the unsorted array, which appends. See the Planned operations section of
+README.md for the rest, and for why the leftist heap, the structure the column
+exists for, is not here yet.
+
+A single meld is too fast to time against the cost of building its operands, so
+both scenarios meld sixteen heaps into one accumulator and time the sixteen
+melds. The figure is therefore nanoseconds per *meld*, not per key.
+`meld-accumulate` starts from an empty accumulator and sixteen operands of
+`n / 16` keys each, so the accumulator grows from `n / 16` to `n`.
+`meld-into-full` prefills the accumulator with `n` keys and melds sixteen
+one-key heaps into it.
+
+| heap | n | `meld-accumulate` | `meld-into-full` |
+|------|--:|------------------:|-----------------:|
+| binary | 1 000 | 956.25 | 948.75 |
+| binary | 10 000 | 13 577.06 | 13 277.06 |
+| binary | 100 000 | 146 126.38 | 172 334.82 |
+| binary | 1 000 000 | 1 419 552.48 | 1 742 740.80 |
+| unsorted | 1 000 | 47.50 | 3.75 |
+| unsorted | 10 000 | 445.00 | 3.13 |
+
+The binary heap's two columns are almost the same number, and that is the whole
+finding. `meld-accumulate` melds operands of `n / 16` keys; `meld-into-full`
+melds operands of *one* key. The work done differs by a factor of sixty
+thousand at `n = 1_000_000`, and the time does not differ at all -- it is
+slightly worse for the one-key operands. An implicit heap cannot splice, so it
+appends and rebuilds, and the rebuild is over the accumulator. What arrives is
+irrelevant; what is already there is what gets paid for.
+
+The unsorted array is the other side of it. Appending one key to a
+million-key array is a store, so `meld-into-full` is 3.13 ns and flat in `n` --
+the same number at `n = 1_000` and `n = 10_000`, and it would be the same
+number at `n = 1_000_000`. Against the binary heap's 1.74 million nanoseconds
+per meld at that size, this is a factor of half a million, and none of it is
+constant-factor: it is O(1) against O(n).
+
+That is the shape a mergeable heap would show, which is what makes the
+degenerate baseline worth having in this column before the real thing arrives.
+The leftist heap would sit between the two -- O(log n) rather than the unsorted
+array's O(1) for a one-key operand, but O(log n) rather than O(n + m) for a
+large one, which is the case the unsorted array cannot win because its
+`Extract_Min` is linear. Until it is there, the column shows that the cost of a
+meld on an implicit heap is set by the accumulator and not by the operand, and
+that this is not a small effect.
+
+`meld-accumulate` at `n = 1_000` is the one place the two are close: 956 ns
+against 47.50, a factor of twenty rather than thousands, because sixteen
+rebuilds of a heap growing to a thousand keys is still only a few thousand
+comparisons.
+
 ## Checksums
 
 The implementations produce matching checksums for every shared scenario and
 size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
+
+The meld scenarios are checksummed the same way, over a drain of the melded
+accumulator outside the timed phase, and the binary heap and the unsorted array
+agree at every size. Two implementations whose melds are a bottom-up rebuild
+and a block copy respectively have very little in common beyond the multiset
+they are supposed to produce, so the agreement is worth something.

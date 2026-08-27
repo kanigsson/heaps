@@ -500,6 +500,101 @@ procedure Heaps_Test is
       Check (Sum = Back, "interval: nothing lost on the way");
    end Test_Interval;
 
+   --  Meld: the two implementations that have the operation so far are
+   --  checked against each other and against a sorted oracle built from the
+   --  same keys. Sizes are swept in both directions so that the lopsided
+   --  cases -- a large heap receiving a tiny one and the reverse -- are
+   --  covered as well as the balanced one.
+
+   procedure Test_Meld (N, M : Natural);
+   procedure Test_Meld (N, M : Natural) is
+      Total : constant Natural := N + M;
+
+      A_Into : Heaps.Unsorted.Heap (Extended_Index (Total));
+      A_From : Heaps.Unsorted.Heap (Extended_Index (Total));
+      B_Into : Heaps.Binary.Heap (Extended_Index (Total));
+      B_From : Heaps.Binary.Heap (Extended_Index (Total));
+
+      Oracle : array (1 .. Total) of Key_Type;
+      Filled : Natural := 0;
+
+      State : Long_Long_Integer := 24_680_135;
+      K     : Key_Type;
+      A_Key : Key_Type;
+      B_Key : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+
+      procedure Feed (Count : Natural; Into_Target : Boolean);
+      procedure Feed (Count : Natural; Into_Target : Boolean) is
+      begin
+         for I in 1 .. Count loop
+            State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+            K := Key_Type (State mod 100_000);
+
+            Filled := Filled + 1;
+            Oracle (Filled) := K;
+
+            if Into_Target then
+               Heaps.Unsorted.Insert (A_Into, K);
+               Heaps.Binary.Insert (B_Into, K);
+            else
+               Heaps.Unsorted.Insert (A_From, K);
+               Heaps.Binary.Insert (B_From, K);
+            end if;
+         end loop;
+      end Feed;
+   begin
+      Feed (N, True);
+      Feed (M, False);
+
+      Heaps.Unsorted.Meld (A_Into, A_From);
+      Heaps.Binary.Meld (B_Into, B_From);
+
+      Check (Heaps.Unsorted.Size (A_Into) = Total,
+             "meld: unsorted size is the sum");
+      Check (Heaps.Binary.Size (B_Into) = Total,
+             "meld: binary size is the sum");
+      Check (Heaps.Unsorted.Is_Empty (A_From),
+             "meld: unsorted source is emptied");
+      Check (Heaps.Binary.Is_Empty (B_From),
+             "meld: binary source is emptied");
+
+      --  Sort the oracle so that the drain order can be compared against it
+
+      for I in 2 .. Total loop
+         declare
+            V : constant Key_Type := Oracle (I);
+            J : Natural := I - 1;
+         begin
+            while J >= 1 and then Oracle (J) > V loop
+               Oracle (J + 1) := Oracle (J);
+               J := J - 1;
+            end loop;
+            Oracle (J + 1) := V;
+         end;
+      end loop;
+
+      for I in 1 .. Total loop
+         Check (Heaps.Binary.Peek_Min (B_Into) = Heaps.Binary.Min_Of (B_Into),
+                "meld: binary peek agrees with the array minimum");
+
+         Heaps.Unsorted.Extract_Min (A_Into, A_Key);
+         Heaps.Binary.Extract_Min (B_Into, B_Key);
+
+         Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
+         Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
+         Check (A_Key = B_Key, "meld: the two implementations agree");
+         Check (B_Key >= Prev, "meld: keys come out in non-decreasing order");
+         Prev := B_Key;
+      end loop;
+
+      Check (Heaps.Unsorted.Is_Empty (A_Into),
+             "meld: unsorted empty after draining");
+      Check (Heaps.Binary.Is_Empty (B_Into),
+             "meld: binary empty after draining");
+   end Test_Meld;
+
+
 begin
    --  Exercise both sides of full and partial 256-key blocks. In particular,
    --  extraction moves the last key across a block boundary at these sizes.
@@ -531,6 +626,17 @@ begin
       Test_Sorted (N);
       Test_Unsorted (N);
    end loop;
+
+   --  Meld across a range of shapes: balanced, and both lopsided directions,
+   --  including the two empty-operand cases.
+   for N of Sizes loop
+      Test_Meld (N, N);
+      Test_Meld (N, 1);
+      Test_Meld (1, N);
+      Test_Meld (N, 0);
+      Test_Meld (0, N);
+   end loop;
+   Test_Meld (0, 0);
 
    if Failures = 0 then
       Put_Line ("all heap tests passed");

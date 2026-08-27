@@ -36,6 +36,30 @@ package body Heaps.Models with SPARK_Mode is
 
    procedure Lemma_Add_Cancels (X, Y : Model; E : Key_Type) is null;
 
+   ----------------------
+   -- Lemma_Sum_Empty --
+   ----------------------
+
+   procedure Lemma_Sum_Empty (X : Model) is null;
+
+   --------------------------
+   -- Lemma_Sum_Congruent --
+   --------------------------
+
+   procedure Lemma_Sum_Congruent (X, Y, Z : Model) is null;
+
+   ----------------------
+   -- Lemma_Sum_Assoc --
+   ----------------------
+
+   procedure Lemma_Sum_Assoc (X, Y, Z : Model) is null;
+
+   --------------------
+   -- Lemma_Sum_Add --
+   --------------------
+
+   procedure Lemma_Sum_Add (X, Y : Model; E : Key_Type) is null;
+
    ------------------------
    -- Lemma_Same_Prefix --
    ------------------------

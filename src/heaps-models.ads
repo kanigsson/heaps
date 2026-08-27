@@ -62,6 +62,31 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
    procedure Lemma_Add_Cancels (X, Y : Model; E : Key_Type)
      with Pre => KM.Add (X, E) = KM.Add (Y, E), Post => X = Y;
 
+   ---------------------------------
+   -- Sum lemmas                  --
+   ---------------------------------
+
+   --  A tree-shaped model is built by summing the models of two subtrees and
+   --  adding the key of the node above them, so reasoning about it needs the
+   --  monoid laws of Sum together with the one law that lets an Add move
+   --  through a Sum. SPARKlib states only the symmetry of Sum; the rest
+   --  follow from the occurrence count of each side and are discharged
+   --  directly from the postconditions of Sum and Add.
+
+   procedure Lemma_Sum_Empty (X : Model)
+     with Post => KM.Sum (X, KM.Empty_Multiset) = X;
+
+   procedure Lemma_Sum_Congruent (X, Y, Z : Model)
+     with Pre => X = Y, Post => KM.Sum (X, Z) = KM.Sum (Y, Z);
+
+   procedure Lemma_Sum_Assoc (X, Y, Z : Model)
+     with Post => KM.Sum (KM.Sum (X, Y), Z) = KM.Sum (X, KM.Sum (Y, Z));
+
+   procedure Lemma_Sum_Add (X, Y : Model; E : Key_Type)
+     with Post => KM.Sum (X, KM.Add (Y, E)) = KM.Add (KM.Sum (X, Y), E);
+   --  The law that carries a node's own key out through the sum of its two
+   --  subtrees, and so the one every step of a recursive merge needs.
+
    -----------------------
    -- Array-level lemmas --
    -----------------------

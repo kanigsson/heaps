@@ -57,6 +57,53 @@ the verified comparison set.
 
 ## Planned
 
+### Operations
+
+The catalogue above varies the data structure while holding the operation set
+fixed: `Insert`, `Extract_Min`, and `Extract_Max` for the double-ended pair.
+Two operations that priority queues are commonly asked for are missing, for
+different reasons.
+
+**Meld.** Destructive `Meld (Into, From)`: `Into` receives every key of
+`From`, which is left empty. This is the operation a mergeable heap exists for,
+and until every entry has it the benchmark cannot show the one column in which
+the leftist heap is asymptotically better than everything it is compared
+against. Implemented and proved so far:
+
+| Heap | Meld | Cost |
+|------|:----:|------|
+| Unsorted array | yes | O(m), a copy and nothing to repair |
+| Binary heap | yes | O(n + m), append then rebuild bottom-up |
+| d-ary heap | no | as the binary heap, via the same generic |
+| Sorted array | no | O(n + m), the merge of two sorted runs |
+| Weak heap | no | append then rebuild |
+| Min-max heap | no | append then rebuild |
+| Interval heap | no | append then rebuild |
+| Beap | no | append then rebuild |
+| Block-min directory | no | copy the keys, recompute the block winners |
+| Leftist heap | no | O(log n) in principle, and the reason to have the operation at all -- but only once the pool is shared, see below |
+
+The implicit heaps rebuild rather than splice, which is asymptotically worse
+and deliberately so: rebuilding by repeated insertion would be O(m log n) and
+would flatter the mergeable structures instead of giving them a fair opponent.
+
+The leftist heap is the open question. Its internal merge already takes two
+roots inside one pool, but the exported `Heap` bundles the pool with the
+assertion that it holds a single tree, so melding two `Heap` objects has to
+copy one operand's nodes into the other's pool -- O(m), which throws away the
+point of the structure. A genuine O(log n) meld needs several trees to live in
+one pool, and that is an API decision affecting every mergeable heap in the
+list below, so it is being taken before the next one is written rather than
+after.
+
+**Decrease-key.** Deliberately out of scope. It needs handles that stay valid
+as keys move, and every implicit heap here relocates keys on every sift, so it
+would mean carrying a handle-to-index map through every swap in every unit:
+a tax on the operations that are already measured, and roughly twice the
+invariant to prove. It belongs with the structures it is actually for --
+Fibonacci and rank-pairing heaps -- on a handle-based API from the start,
+rather than retrofitted onto the array-backed ones.
+
 ### Array-backed selection structures
 
 - Tournament (winner) tree
@@ -134,6 +181,12 @@ than logarithmic, so they run over fewer sizes than the rest.
 Each implementation receives the same fixed-seed key sequence. Each scenario
 runs five times; the fastest time is reported in nanoseconds per operation. See
 [OBSERVATIONS.md](OBSERVATIONS.md) for results.
+
+No scenario melds two heaps yet; see [Planned operations](#operations) for why,
+and for what that leaves unmeasured. A single meld is far too fast to time, so
+the workload will be k-way accumulation -- build k heaps and meld them all into
+one -- which makes the timed phase long enough to measure and sweeps the size
+ratio between the operands as the accumulator grows.
 
 ## Layout
 

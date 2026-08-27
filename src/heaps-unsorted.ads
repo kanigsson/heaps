@@ -72,6 +72,20 @@ package Heaps.Unsorted with SPARK_Mode is
           Post => Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Size (From) <= Into.Capacity - Size (Into),
+          Post => Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --  For this structure it is the cheapest meld in the collection -- keys are
+   --  unsorted and stay unsorted, so there is nothing to repair and the whole
+   --  operation is a copy of Size (From) keys.
+   --
+   --  Melding is destructive here only for uniformity with the mergeable
+   --  heaps, where an operand cannot survive the operation. An unsorted array
+   --  could leave From alone at no extra cost.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H),
           Post => Size (H) = Size (H)'Old - 1

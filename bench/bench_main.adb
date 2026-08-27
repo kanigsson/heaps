@@ -52,6 +52,13 @@ begin
    Bench.Beap_Heap.Runner.Run (Beap_Sizes);
    Bench.Sorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Unsorted_Heap.Runner.Run (Baseline_Sizes);
+
+   --  Meld. Only the entries that have the operation so far; see the Planned
+   --  operations section of README.md for the rest, and for why the leftist
+   --  heap -- the one the column exists for -- is not here yet.
+   Bench.Binary_Heap.Meld_Runner.Run (Sizes);
+   Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
+
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
    Bench.Interval_Heap.Deque_Runner.Run (Sizes);
    Bench.Open_Heap.Deque_Runner.Run (Sizes);

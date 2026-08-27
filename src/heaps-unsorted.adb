@@ -59,6 +59,66 @@ package body Heaps.Unsorted with SPARK_Mode is
          K);
    end Insert;
 
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Before : constant Key_Array := Into.Keys with Ghost;
+      Base   : constant Extended_Index := Into.Last;
+      Cap    : constant Extended_Index := Into.Capacity;
+
+      Prev : Key_Array (1 .. Cap) := Into.Keys with Ghost;
+      --  Into's keys at the top of the current iteration, which the invariant
+      --  established by the previous one speaks about. It is a variable
+      --  outside the loop rather than a constant inside it because SPARK does
+      --  not accept a non-scalar declaration ahead of a loop invariant.
+   begin
+      for I in 1 .. From.Last loop
+         Prev := Into.Keys;
+
+         Into.Keys (Base + I) := From.Keys (I);
+         Into.Last := Base + I;
+
+         --  Storing into slot Base + I leaves everything below it alone, so
+         --  the model carried by the previous iteration still describes the
+         --  prefix; the new key is then one Add on top of it.
+
+         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + I - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev, Base + I - 1),
+            Models.Occurrences (Into.Keys, Base + I - 1),
+            From.Keys (I));
+
+         --  On the other side of the equation, one more key of From joins the
+         --  sum. Carrying that Add out through the sum is the whole content of
+         --  the step, and the first iteration starts from an empty
+         --  contribution.
+
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Before, Base),
+            Models.Occurrences (From.Keys, I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (for all J in 1 .. Base => Into.Keys (J) = Before (J));
+         pragma Loop_Invariant
+           (Model (Into)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      --  With no keys to copy the sum is Into's own model.
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+      end if;
+
+      From.Last := 0;
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------
