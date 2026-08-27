@@ -1,0 +1,26 @@
+--
+--  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+--
+
+with "heaps.gpr";
+
+project Bench is
+
+   for Source_Dirs use ("bench");
+   for Object_Dir use "bench/obj";
+   for Exec_Dir use ".";
+   for Main use ("bench_main.adb", "heaps_test.adb");
+
+   package Compiler is
+      --  No -gnata here on purpose: assertions and contracts are checked by
+      --  proof, not at run time, and enabling them would distort timings.
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-O2", "-gnatn", "-gnatwa", "-funroll-loops");
+
+      --  The sanity checker, unlike the benchmark, runs with contracts and
+      --  assertions enabled.
+      for Switches ("heaps_test.adb") use
+        ("-gnat2022", "-O0", "-gnatwa", "-gnata");
+   end Compiler;
+
+end Bench;

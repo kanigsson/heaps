@@ -1,0 +1,12 @@
+# Build artifacts
+/obj/
+/lib/
+/bench/obj/
+
+# gnatprove session and results
+/proof/
+gnatprove-run.txt
+
+# Executables
+/bench_main
+/heaps_test

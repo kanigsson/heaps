@@ -1,0 +1,24 @@
+--
+--  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+--
+
+with "sparklib";
+
+project Heaps is
+
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Library_Name use "heaps";
+   for Library_Dir use "lib";
+   for Library_Kind use "static";
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwa", "-gnatX0", "-O2", "-gnatn");
+   end Compiler;
+
+   package Prove is
+      for Proof_Dir use "proof";
+   end Prove;
+
+end Heaps;
