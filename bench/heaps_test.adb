@@ -11,6 +11,7 @@
 with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
 with Heaps.Binary;
+with Heaps.Dary;
 with Heaps.Sorted;
 with Heaps.Unsorted;
 
@@ -61,6 +62,38 @@ procedure Heaps_Test is
       Check (Heaps.Binary.Is_Empty (H), "heap empty after draining");
       Check (Sum = Back, "the keys that came out are the keys that went in");
    end Test_Binary;
+
+   procedure Test_Dary (N : Positive; Arity : Heaps.Dary.Arity_Type);
+   procedure Test_Dary (N : Positive; Arity : Heaps.Dary.Arity_Type) is
+      Tag   : constant String :=
+        Integer'Image (Arity) & "-ary:";
+      H     : Heaps.Dary.Heap (Extended_Index (N), Arity);
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Dary.Insert (H, K);
+         Check (Heaps.Dary.Size (H) = I, Tag & " size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Dary.Peek_Min (H) = Heaps.Dary.Min_Of (H),
+                Tag & " peek agrees with the array minimum");
+         Heaps.Dary.Extract_Min (H, K);
+         Check (K >= Prev, Tag & " keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Dary.Is_Empty (H), Tag & " empty after draining");
+      Check (Sum = Back, Tag & " nothing lost on the way");
+   end Test_Dary;
 
    procedure Test_Sorted (N : Positive);
    procedure Test_Sorted (N : Positive) is
@@ -131,6 +164,11 @@ procedure Heaps_Test is
 begin
    for N of Sizes loop
       Test_Binary (N);
+      for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop
+         Test_Dary (N, Arity);
+      end loop;
+      Test_Dary (N, 16);
+      Test_Dary (N, 64);
       Test_Sorted (N);
       Test_Unsorted (N);
    end loop;

@@ -23,7 +23,7 @@ Ordered roughly by how hard they are to verify.
 | # | Heap | Notes | Verification |
 |---|------|-------|--------------|
 | 1 | **Binary heap** (Williams) | The classic. Sift-up on insert, sift-down on extract. | see table below |
-| 2 | **d-ary heap** | Shallower tree, fewer sift-up moves, more comparisons per sift-down level. Generalizes #1. | planned |
+| 2 | **d-ary heap** | Shallower tree, fewer sift-up moves, more comparisons per sift-down level. Generalizes #1. | see table below |
 | 3a | **Unsorted array** | Not a heap: O(1) insert, O(n) extract. The baseline the real heaps have to beat. | see table below |
 | 3b | **Sorted array** | The opposite corner: O(n) insert, O(1) extract. Kept in decreasing order so removal needs no shifting. | see table below |
 | 4 | **Min-max heap** | Alternating min and max levels: a double-ended queue in one array. | planned |
@@ -67,12 +67,21 @@ Each heap is taken through the SPARK assurance levels in order:
 | Heap | Silver | Gold | Platinum |
 |------|:------:|:----:|:--------:|
 | Binary heap | ✅ | ✅ | ✅ |
+| d-ary heap | ✅ | ✅ | ✅ |
 | Unsorted array | ✅ | ✅ | ✅ |
 | Sorted array | ✅ | ✅ | ✅ |
 
 `gnatprove -P heaps.gpr -j0 --level=2 -f` currently reports
-**`Success: all checks proved (435 checks)`** — that covers `src/` and the part
+**`Success: all checks proved (656 checks)`** — that covers `src/` and the part
 of SPARKlib the project uses.
+
+The d-ary heap takes the arity as a *discriminant* of the heap type rather
+than as a generic parameter. A generic would only ever be verified through its
+instances, one proof per arity; with a discriminant the arity is a universally
+quantified variable and the single proof covers every arity at once. The price
+is paid at run time — see the benchmark discussion below — and it is the only
+place in the collection where verifiability and speed pull in opposite
+directions.
 
 For the two baselines "gold" means different things, which is the point of
 having them. The sorted array has a real structural invariant, `Is_Sorted`,
@@ -107,6 +116,16 @@ sift-down and the ordering invariant are then pure implementation detail.
 The model machinery lives in `Heaps.Models` and is shared by every heap in the
 collection, so later heap kinds only have to relate their own layout to
 `Occurrences`.
+
+The d-ary heap carries those contracts word for word: the multiset model does
+not mention the array, so generalizing the layout from two children to `Arity`
+children changes the implementation and the invariants but not one character
+of the specification. What it does change is that the parent relation is no
+longer a shift. `Parent (D, I) = (I + D - 2) / D` and
+`First_Child (D, I) = D * (I - 1) + 2` are inverse to each other, and unfolding
+that integer division once — `Lemma_Child_Range`, the only nonlinear step in
+the unit — is what lets every other proof in `Heaps.Dary` reason about
+"the children of the hole" as a contiguous slice.
 
 ### Run-time cost of the ghost code
 
@@ -167,9 +186,13 @@ The two array baselines have a linear operation each, so their scenarios are
 quadratic; `bench_main` runs them only up to `n = 10_000`.
 
 Because every heap kind sees the same key stream, the checksum column is a
-cross-implementation oracle: the binary heap, the sorted array and the unsorted
-array all print the same checksum for the same scenario and size, including the
-rank-weighted `drain` checksum that depends on the order keys come out.
+cross-implementation oracle: the binary heap, the three d-ary arities, the
+sorted array and the unsorted array all print the same checksum for the same
+scenario and size, including the rank-weighted `drain` checksum that depends on
+the order keys come out.
+
+The findings the benchmark has produced so far — which heap kind wins which
+scenario, and why — are collected in [OBSERVATIONS.md](OBSERVATIONS.md).
 
 ## License
 
