@@ -19,16 +19,18 @@ trade-off: see [OBSERVATIONS.md](OBSERVATIONS.md).
 
 ### Open benchmark entry
 
-`Bench.Open_Heap` is an intentionally unverified, full-Ada entry in the
-benchmark rather than another canonical heap. It obeys the same online API for
-arbitrary keys, but may use extra memory and adapt to the operation history. It
-does not inspect scenario names, generator state or future operations.
+`Heaps.Open` is an intentionally unverified Ada implementation rather than
+another canonical heap. It obeys the same online API for arbitrary keys, but
+may use extra memory and adapt to the operation history. It does not inspect
+scenario names, generator state or future operations.
 
 The entry buffers an insertion phase. After the first extraction it either
 builds a binary min/max heap for mixed traffic or radix-sorts the integer keys
 for a continuing drain; switching ends also selects the sorted representation.
-It is included to show what an implementation optimized for the workloads can
-do, not as part of the verified comparison set.
+It is workload-specialized: its adaptation policy was designed with the
+benchmark's phased drains and alternating churn in mind. It is included to show
+what an implementation optimized for those workloads can do, not as part of
+the verified comparison set.
 
 ## Planned
 
@@ -55,7 +57,9 @@ do, not as part of the verified comparison set.
 
 ## Verification
 
-GNATprove proves for every implementation in `src/`:
+GNATprove proves every canonical implementation in `src/`; `Heaps.Open` is the
+explicit unverified exception. For the verified implementations GNATprove
+checks:
 
 - absence of run-time errors (Silver);
 - preservation of ordering and correct minimum or maximum results (Gold);
