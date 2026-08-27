@@ -9,17 +9,31 @@ Verified priority queues backed by arrays. No access types.
 | Binary heap | O(log n) | O(log n) min | Binary min-heap |
 | d-ary heap | O(log\_d n) | O(d log\_d n) min | Configurable arity |
 | Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
+| Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
 | Unsorted array | O(1) | O(n) min | Baseline |
 | Sorted array | O(n) | O(1) min | Baseline |
 
 The d-ary heap's arity is a type discriminant, so one proof covers all valid
-arities.
+arities. The two double-ended queues take opposite sides of the same
+trade-off: see [OBSERVATIONS.md](OBSERVATIONS.md).
+
+### Open benchmark entry
+
+`Bench.Open_Heap` is an intentionally unverified, full-Ada entry in the
+benchmark rather than another canonical heap. It obeys the same online API for
+arbitrary keys, but may use extra memory and adapt to the operation history. It
+does not inspect scenario names, generator state or future operations.
+
+The entry buffers an insertion phase. After the first extraction it either
+builds a binary min/max heap for mixed traffic or radix-sorts the integer keys
+for a continuing drain; switching ends also selects the sorted representation.
+It is included to show what an implementation optimized for the workloads can
+do, not as part of the verified comparison set.
 
 ## Planned
 
 ### Implicit array heaps
 
-- Interval heap
 - Beap
 - Weak heap
 
@@ -41,7 +55,7 @@ arities.
 
 ## Verification
 
-GNATprove proves for every implementation:
+GNATprove proves for every implementation in `src/`:
 
 - absence of run-time errors (Silver);
 - preservation of ordering and correct minimum or maximum results (Gold);
@@ -50,9 +64,9 @@ GNATprove proves for every implementation:
 ### Contracts
 
 The contracts treat a heap as a multiset of keys. `Insert` adds one occurrence.
-`Extract_Min` removes one occurrence of a minimum key. The min-max heap provides
-the corresponding guarantee for `Extract_Max`. Each operation states the new
-size and restores the heap invariant.
+`Extract_Min` removes one occurrence of a minimum key. The min-max and interval
+heaps provide the corresponding guarantee for `Extract_Max`. Each operation
+states the new size and restores the heap invariant.
 
 The multiset model is ghost code. Contracts and proof assertions are disabled
 at run time.
@@ -62,6 +76,7 @@ at run time.
 ```sh
 gprbuild -P bench.gpr
 ./heaps_test
+./open_heap_test
 ./bench_main
 gnatprove -P heaps.gpr -j0 --level=2
 ```

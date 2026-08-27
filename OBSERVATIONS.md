@@ -1,121 +1,126 @@
-# Observations
+# Benchmark observations
 
-What the benchmark suite has actually shown, heap kind by heap kind. The
-README describes what is measured and how; this file is where the numbers are
-interpreted. A new section goes in here whenever a heap kind is added and turns
-out to have something to say.
-
-Numbers are nanoseconds per operation, best of five runs, produced by
+Results from an AMD Ryzen 9 3950X using GNAT Pro 27.0w at `-O2`:
 
 ```sh
-gprbuild -P bench.gpr && ./bench_main
+gprbuild -P bench.gpr
+./bench_main
 ```
 
-on an AMD Ryzen 9 3950X with GNAT Pro 27.0w at `-O2`. The absolute values are
-machine-specific and not worth much; the comparisons between rows of the same
-table are the point, since every heap kind sees the identical key sequence.
+Times are nanoseconds per operation, using the fastest of five runs. Absolute
+times are machine-specific; comparisons within a table are more useful.
 
-## d-ary heap: does a larger arity pay?
+## Main workloads
 
-`bench_main` measures arities 4, 8 and 16 next to the binary heap. At
-`n = 1_000_000`:
-
-| arity | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
-|------:|-------:|--------:|--------:|-------------:|--------------:|
-| 2 | 10.19 | 100.04 | 53.69 | 1.93 | 11.15 |
-| 4 | 11.12 | 93.25 | 60.33 | 5.18 | 40.42 |
-| 8 | 8.21 | 125.26 | 71.25 | 5.15 | 27.96 |
-| 16 | 6.69 | 172.49 | 91.65 | 5.06 | 20.37 |
-
-The textbook story is that a wider tree helps insertion and hurts extraction,
-and the extraction half of it holds: `drain` degrades steadily with the arity,
-because sift-down inspects `Arity` children at every one of its `log_Arity n`
-levels, and `Arity / log Arity` grows. The exception is 4-ary at a million
-keys, which overtakes the binary heap on `drain` even though it does more
-comparisons — the working set of a sift-down step is a handful of adjacent
-slots instead of two slots a cache line apart, and at that size the cache wins
-the argument. `fill` shows the same effect without the comparison penalty:
-16-ary inserts a third faster than the binary heap.
-
-The two ordered-insert scenarios are where the discriminant shows up.
-`insert-asc` stops at the first parent comparison whatever the arity, so the
-binary heap's 1.93 ns against a flat ~5 ns for every d-ary arity is not a
-property of d-ary heaps at all: it is one integer division by a value the
-compiler cannot see. `insert-desc` walks the whole path to the root, so the
-d-ary heaps get their shallower tree back and improve monotonically with the
-arity — 40.42 at arity 4 down to 20.37 at arity 16 — while still not catching
-the binary heap, which divides by a literal 2. A generic instantiated per arity
-would close that gap, at the cost of one proof per arity.
-
-The short version: prefer a wide d-ary heap for insert-dominated workloads
-large enough to miss cache, and a binary heap whenever extraction is on the
-hot path.
-
-## Min-max heap: what does a second end cost?
-
-The min-max heap is the first double-ended structure in the collection, so
-there are two separate questions to ask of it: what it gives up on the
-single-ended workload the other heaps are measured on, and what the two ends
-cost relative to each other. At `n = 1_000_000`:
+Results at `n = 1_000_000`:
 
 | heap | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
 |------|-------:|--------:|--------:|-------------:|--------------:|
-| binary | 9.99 | 92.19 | 50.29 | 1.93 | 11.21 |
-| min-max | 13.31 | 176.28 | 88.73 | 12.63 | 13.70 |
+| binary | 9.83 | 98.35 | 51.81 | 1.90 | 11.02 |
+| 4-ary | 10.92 | 91.06 | 58.84 | 5.20 | 40.81 |
+| 8-ary | 8.25 | 124.40 | 69.96 | 5.07 | 27.49 |
+| 16-ary | 6.58 | 171.30 | 89.67 | 4.97 | 20.06 |
+| min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
+| interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
 
-Extraction costs about twice as much as on a binary heap, which is roughly the
-comparison count: a min-max sift-down descends two levels per step but has to
-pick the best of up to six nodes — two children and four grandchildren — to do
-it, so it spends about three comparisons per level against the binary heap's
-two, and the grandchildren of a deep node are four cache lines apart where a
-binary heap's two children share one.
+### d-ary heaps
 
-The ordered-insert pair is the more interesting row. The binary heap spreads
-across a factor of six between its best case and its worst — 1.93 against
-11.21 — while the min-max heap is flat, 12.63 against 13.70. This is not an
-artefact: a double-ended heap has no cheap direction. Every key of an
-ascending stream is a new minimum and every key of a descending stream is a new
-maximum, so either way the new key climbs to the top of *its own* side and both
-monotone streams are worst cases. The binary heap's cheap case is cheap
-precisely because it is blind to the maximum: an ascending key is worse than
-its parent and stops at the first comparison.
+Larger arities improve insertion by reducing tree depth. The 16-ary heap has
+the fastest `fill`, but its `drain` is almost twice as slow as the binary heap
+because each sift-down examines more children.
 
-The second end is not the expensive one:
+The binary heap remains fastest for `drain` and `churn`. The 4-ary heap comes
+closest on extraction, at 91.06 ns/op against 98.35 for binary.
 
-| scenario | ns/op |
-|----------|------:|
-| `drain` (min end) | 176.28 |
-| `drain-max` | 188.35 |
-| `drain-both` | 202.44 |
-| `trim` | 96.63 |
+The d-ary implementations also pay for division by a run-time arity. This is
+most visible in `insert-asc`, where insertion stops after one comparison:
+about 5 ns/op for each d-ary heap against 1.90 for binary. Larger arities
+reduce the full-path cost in `insert-desc`, but none catches the binary heap.
 
-Extracting maxima costs seven per cent more than extracting minima, and
-alternating between the ends — which defeats any locality either pure drain
-gets — costs about ten per cent more than either. There is no cheap end and no
-hidden asymmetry, which is the run-time counterpart of the fact that one piece
-of code, parameterized by the side, serves both directions.
+Use binary for mixed or extraction-heavy workloads. The 8- and 16-ary heaps
+are useful when insertion dominates.
 
-`trim` is the workload the structure exists for: a bounded "best `n` so far"
-queue, where every insertion is paid for by evicting the current worst. At
-96.63 ns per operation it is very close to the binary heap's `churn` (50.29)
-doubled, which is what one would expect, and it needs one array and one
-implementation rather than two heaps kept in step with each other.
+### Min-max heap
 
-### The cost of knowing which level you are on
+The min-max heap provides both minimum and maximum extraction. Against the
+binary heap, `fill` is 33% slower, `drain` takes about 78% longer, and `churn`
+is 70% slower.
 
-A min-max heap has to know the parity of the depth of the node it starts from,
-which is something no other heap in the collection needs. Walking up one level
-at a time costs up to 24 halvings per insertion and was plainly visible in the
-measurements. Climbing two levels at a time instead — the side is unchanged
-across a grandparent step, so the walk can stop as soon as it reaches the top
-three nodes, of which only the root is a min node — halves that:
+Ascending and descending insertion cost nearly the same. Each ordered stream
+repeatedly introduces a new extreme, so neither direction is a cheap case.
 
-| | `fill` | `insert-asc` | `insert-desc` |
-|---|-------:|-------------:|--------------:|
-| one level at a time | 16.10 | 15.30 | 16.38 |
-| two levels at a time | 13.31 | 12.63 | 13.70 |
+### Interval heap
 
-About seventeen per cent of the insertion path, for a routine that computes
-nothing the algorithm proper uses. What is left of it is still visible in
-`insert-asc`: 12.63 against the binary heap's 1.93, where the sift itself is
-short and the level computation is most of the work.
+The interval heap is the other double-ended queue in the collection, and it
+splits the difference the opposite way: much better at extraction, much worse
+at insertion.
+
+Against the min-max heap, `drain` is 38% faster and `churn` 26% faster. The
+reason is how far one step of a sift travels for what it costs. A min-max
+sift-down step crosses two levels and has to look at up to six nodes -- two
+children and four grandchildren -- whereas an interval-heap step crosses one
+level and looks at two children plus one comparison to repair the node it
+lands in. Over a whole descent the interval heap makes fewer comparisons.
+
+The comparison against the binary heap is the interesting one: `drain` is only
+10% slower than a queue that has no maximum at all, where the min-max heap
+pays 78%. On extraction-heavy work, this is close to a free second end.
+
+Insertion is where it loses. A min-max sift-up compares a key only against its
+same-side ancestors, so it climbs two levels per step; an interval-heap sift-up
+climbs one. Its tree is one level shallower, holding two keys per node, which
+recovers part of that but not all of it, and `insert-asc` ends up at 53.44
+ns/op against 12.66 for the min-max heap.
+
+Ascending and descending insertion also differ by 48%, which the min-max heap
+does not show. Every key of an ascending stream is a new maximum and travels
+up the high ends of the nodes; every key of a descending stream is a new
+minimum and travels up the low ends. The low end of a node is always the first
+of its two slots, but the high end is the second one only when the node holds
+two keys, so each step along the high side carries an extra test against the
+size of the heap. The cost of making a lone key behave like an interval is
+paid on one side only.
+
+Double-ended results at `n = 1_000_000`:
+
+| scenario | min-max | interval |
+|----------|--------:|---------:|
+| `drain` | 174.84 | 108.53 |
+| `drain-max` | 192.53 | 116.53 |
+| `drain-both` | 204.66 | 114.00 |
+| `trim` | 99.77 | 72.86 |
+
+Both heaps are slightly slower at the high end than at the low end -- 7% for
+the interval heap, 10% for the min-max heap. Alternating between the two ends
+costs the min-max heap 17% more than draining from the low end alone and lands
+it outside the range spanned by its two single-ended figures; the interval
+heap stays inside that range, its two ends living in the same pair of slots,
+so a step of either sift brings the other end into cache as well.
+
+`trim` measures an insert followed by `extract-max`, as used by a bounded
+top-n queue. The interval heap wins it despite its slower insertion: the keys
+it inserts are random rather than ordered, so most of those insertions stop
+after a step or two and the extractions dominate.
+
+Use the interval heap when both ends are read more often than the queue is
+filled, and the min-max heap when insertion dominates.
+
+## Array baselines
+
+The linear baselines run only through `n = 10_000`:
+
+| heap | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
+|------|-------:|--------:|--------:|-------------:|--------------:|
+| sorted | 1218.07 | 2.28 | 878.20 | 2504.12 | 2.33 |
+| unsorted | 2.38 | 10704.37 | 10648.95 | 1.95 | 1.94 |
+
+The sorted array makes extraction constant-time but shifts keys during
+insertion. Descending input is already in storage order and needs no shifting.
+The unsorted array has constant-time insertion and scans the array for every
+extraction.
+
+## Checksums
+
+The implementations produce matching checksums for every shared scenario and
+size. This checks that they process the same key stream and return the same
+results while taking different internal paths.
