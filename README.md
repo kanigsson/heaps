@@ -145,9 +145,12 @@ rather than retrofitted onto the array-backed ones.
 
 ## Verification
 
-GNATprove proves every canonical implementation in `src/`; `Heaps.Open` is the
-explicit unverified exception. For the verified implementations GNATprove
-checks:
+GNATprove proves every canonical implementation in `src/` except
+`Heaps.Leftist_Arena`, which is in progress: 134 of its 139 checks go through
+at `--level=4`, and the five that remain are the preservation of the arena
+invariant by node allocation and release. `Heaps.Open` is the explicit
+unverified exception. Whole project: 3927 of 3932 checks, all five outstanding
+ones in the arena. For the verified implementations GNATprove checks:
 
 - absence of run-time errors (Silver);
 - preservation of ordering and correct minimum or maximum results (Gold);
