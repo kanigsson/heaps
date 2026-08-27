@@ -24,7 +24,8 @@ Ordered roughly by how hard they are to verify.
 |---|------|-------|--------------|
 | 1 | **Binary heap** (Williams) | The classic. Sift-up on insert, sift-down on extract. | see table below |
 | 2 | **d-ary heap** | Shallower tree, fewer sift-up moves, more comparisons per sift-down level. Generalizes #1. | planned |
-| 3 | **Sorted / unsorted array** | Not heaps, but the natural baselines for the benchmark at small `n`. | planned |
+| 3a | **Unsorted array** | Not a heap: O(1) insert, O(n) extract. The baseline the real heaps have to beat. | see table below |
+| 3b | **Sorted array** | The opposite corner: O(n) insert, O(1) extract. Kept in decreasing order so removal needs no shifting. | see table below |
 | 4 | **Min-max heap** | Alternating min and max levels: a double-ended queue in one array. | planned |
 | 5 | **Interval heap** (twin heap) | Double-ended too, but each node holds a `[min, max]` interval. | planned |
 | 6 | **Beap** (bi-parental heap) | Nodes have two parents and two children; O(√n) operations. | planned |
@@ -66,10 +67,20 @@ Each heap is taken through the SPARK assurance levels in order:
 | Heap | Silver | Gold | Platinum |
 |------|:------:|:----:|:--------:|
 | Binary heap | ✅ | ✅ | ✅ |
+| Unsorted array | ✅ | ✅ | ✅ |
+| Sorted array | ✅ | ✅ | ✅ |
 
 `gnatprove -P heaps.gpr -j0 --level=2 -f` currently reports
-**`Success: all checks proved (295 checks)`** — that covers `src/` and the part
+**`Success: all checks proved (435 checks)`** — that covers `src/` and the part
 of SPARKlib the project uses.
+
+For the two baselines "gold" means different things, which is the point of
+having them. The sorted array has a real structural invariant, `Is_Sorted`,
+preserved by both operations, and `Lemma_Last_Is_Minimum` plays exactly the
+role `Lemma_Root_Is_Minimum` plays for the binary heap. The unsorted array has
+*no* invariant — every array value is a valid state — so its specification is
+nothing but the multiset equations plus `Is_Minimum`. It is the smallest
+complete example of what platinum actually asserts.
 
 ### What the contracts actually say
 
@@ -147,7 +158,18 @@ cross-check two implementations against each other.
 | `insert-desc` | `n` inserts in decreasing key order — worst case for sift-up |
 
 Each scenario is run 5 times and the fastest run is reported, in nanoseconds
-per operation.
+per operation. `insert-asc` and `insert-desc` swap roles between the binary
+heap and the sorted array: ascending keys are the cheap case for a min-heap
+(the new key stays at the leaf) and the worst case for a descending sorted
+array (every insert shifts the whole array).
+
+The two array baselines have a linear operation each, so their scenarios are
+quadratic; `bench_main` runs them only up to `n = 10_000`.
+
+Because every heap kind sees the same key stream, the checksum column is a
+cross-implementation oracle: the binary heap, the sorted array and the unsorted
+array all print the same checksum for the same scenario and size, including the
+rank-weighted `drain` checksum that depends on the order keys come out.
 
 ## License
 

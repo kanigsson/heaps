@@ -11,6 +11,8 @@
 with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
 with Heaps.Binary;
+with Heaps.Sorted;
+with Heaps.Unsorted;
 
 procedure Heaps_Test is
 
@@ -60,9 +62,77 @@ procedure Heaps_Test is
       Check (Sum = Back, "the keys that came out are the keys that went in");
    end Test_Binary;
 
+   procedure Test_Sorted (N : Positive);
+   procedure Test_Sorted (N : Positive) is
+      H     : Heaps.Sorted.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Peek  : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Sorted.Insert (H, K);
+         Check (Heaps.Sorted.Size (H) = I, "sorted: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Peek := Heaps.Sorted.Peek_Min (H);
+         Heaps.Sorted.Extract_Min (H, K);
+         Check (K = Peek, "sorted: peek agrees with the extracted key");
+         Check (K >= Prev, "sorted: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Sorted.Is_Empty (H), "sorted: empty after draining");
+      Check (Sum = Back, "sorted: nothing lost on the way");
+   end Test_Sorted;
+
+   procedure Test_Unsorted (N : Positive);
+   procedure Test_Unsorted (N : Positive) is
+      H     : Heaps.Unsorted.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Peek  : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Unsorted.Insert (H, K);
+         Check (Heaps.Unsorted.Size (H) = I, "unsorted: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Peek := Heaps.Unsorted.Peek_Min (H);
+         --  Which minimal slot Extract_Min removes is not specified when
+         --  keys are tied, but the minimal *value* is unique, so the two
+         --  must agree on it.
+         Check (Heaps.Unsorted.Peek_Min (H) = Peek,
+                "unsorted: peek agrees with the extracted key");
+         Heaps.Unsorted.Extract_Min (H, K);
+         Check (K >= Prev, "unsorted: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Unsorted.Is_Empty (H), "unsorted: empty after draining");
+      Check (Sum = Back, "unsorted: nothing lost on the way");
+   end Test_Unsorted;
+
 begin
    for N of Sizes loop
       Test_Binary (N);
+      Test_Sorted (N);
+      Test_Unsorted (N);
    end loop;
 
    if Failures = 0 then
