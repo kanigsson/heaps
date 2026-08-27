@@ -6,6 +6,13 @@ proofs are largely mechanical. The leftist heap is the first one with an
 explicit tree in a node pool, and it took roughly as long as the other six
 together. These are the lessons from it, written down while they were fresh.
 
+The sections up to *What it added up to* are about `Heaps.Leftist`, the unit
+whose `Heap` object owns its pool and holds one tree. The sections after it are
+about `Heaps.Leftist_Arena`, which puts several trees in one shared pool so
+that a meld can be a splice. The arena inherits the earlier lessons unchanged
+-- it is the same tree, and its invariant is flat for the same reasons -- and
+adds the ones that only come up once a pool holds more than one tree.
+
 ## Keep the invariant flat
 
 The temptation with a linked structure is to describe it the way a textbook
@@ -197,3 +204,173 @@ For comparison, the weak heap -- the last implicit one, and not a trivial
 proof either -- is 440 lines and went through at `--level=2` on the first
 attempt. The step up to an explicit tree is not a step up in the difficulty of
 any single argument. It is a step up in how many of them there are.
+
+## Cache the model instead of recursing over the tree
+
+The arena holds several trees at once, and that changes what a model costs. In
+`Heaps.Leftist` the model of the heap is a scan of the array prefix that holds
+its nodes, because the pool holds exactly one tree and every slot in use
+belongs to it. In an arena there is no such prefix: slot 7 and slot 900 may
+belong to different trees, and which nodes belong to which is precisely the
+subtree-level reasoning the flat invariant exists to avoid.
+
+The obvious repair is to define a tree's model by recursion over its nodes.
+That is a trap. A recursive model reads the whole pool, so every mutation owes
+a proof that the trees *not* being touched still have the model they had -- and
+stating that means saying which nodes belong to which tree, which is the thing
+that was being avoided.
+
+What works is to cache the model: one multiset per node, holding the keys of
+the subtree rooted there, maintained by the same assignments that maintain
+`Size`.
+
+```ada
+      and then S.Sub (I)
+               = Key_Multisets.Add
+                   (Key_Multisets.Sum (Sub_Of (S, S.Links (I).Left),
+                                       Sub_Of (S, S.Links (I).Right)),
+                    S.Keys (I))
+```
+
+One clause, one node, its two immediate children -- the same shape as the
+clause that maintains `Size`, and maintained by the same three assignments. A
+tree's model is then a *lookup*, the cache of its root, and the frame that a
+recursive model could not state without a reachability relation becomes one
+equality per root:
+
+```ada
+      and (for all U in Tree =>
+             (if U /= T'Old and then Is_Root (Snap'Old, U)
+              then Is_Root (Snap, U)
+                   and then Model (Snap, U) = Model (Snap'Old, U)));
+```
+
+A mutation that leaves a root alone leaves its model alone for free. The second
+dividend is that "the root is the minimum" needs no walk up the parent links:
+`for all E of S.Sub (I) => S.Keys (I) <= E` is a clause about one node, so the
+fact falls out of the invariant at the root itself.
+
+SPARK has no ghost record components and no ghost parameters of non-ghost
+subprograms (LRM 6.9(7)), so the cache can neither ride inside the node nor be
+passed in. Ghost package state is the one place it can live.
+
+## Name the state when the state is a package
+
+`Heaps.Leftist` compares against `H'Old`. An arena has no `H`: the pool is
+package state, and a contract cannot pass "the arena before the call" to a
+ghost function. It needs a name for that state, and a private ghost record
+holding all of it -- keys, links, free chain, and the ghost arrays -- is that
+name.
+
+This is not decoration. `'Old` may not be applied to an expression mentioning a
+quantified variable, so inside a `for all U` the natural `Model (U)'Old` is
+illegal where `Model (Snap'Old, U)` is fine -- and every frame clause in the
+unit is of that shape. The snapshot type has to be ghost, which is also why the
+real state cannot be an object of it: with no ghost components, a non-ghost
+record could not hold the ghost arrays without making them real. So the state
+stays as separate variables and one expression function assembles them.
+
+The cost is that `Snap'Old` ends up inside the implications of the frame
+clauses and is therefore formally *potentially unevaluated*, which needs
+`pragma Unevaluated_Use_Of_Old (Allow)`. It is a pure function of the arena and
+always well defined, which is the case that pragma exists for.
+
+## Two inverse arrays beat a quantifier over pairs
+
+The free chain needs two things: that it does not cycle, and that no node is on
+it twice. The first is the same problem as `Size` on a tree and takes the same
+answer -- a value that strictly decreases from a node to the next rules out a
+cycle locally, with no recursive definition and no induction. Here that value
+is the node's one-based position along the chain, counting from the far end.
+
+Injectivity is the interesting half. Stated directly it is a quantifier over
+*pairs* of nodes, and it would sit inside `Valid`, which is the hypothesis of
+nearly every proof in the unit -- an O(n^2) clause paid for everywhere. Stated
+as a pair of inverse arrays it is a quantifier over single nodes:
+
+```ada
+      and then (for all K in 1 .. Capacity =>
+                  (if K <= S.Free_Count
+                   then S.Chain_At (K) in 1 .. Capacity
+                        and then S.Chain_Pos (S.Chain_At (K)) = K)))
+```
+
+Two free nodes at the same position are both `Chain_At` of it, so they are the
+same node, in one step. The head is therefore the only node at the far end, and
+popping it leaves every other position in range -- which is exactly what
+`Allocate` needs and all it needs.
+
+## Split a large predicate, but do not guard the halves
+
+`Valid` is `Chain_Sound and then Nodes_Sound`. Establishing it after `Clear` as
+a single goal sat on the prover's time limit: it passed when scoped to the unit
+and failed in the whole-project run, from clean sessions either way, purely on
+how loaded the machine was. Split in two it is two moderate goals and it is
+stable.
+
+Neither half carries a precondition, and that is deliberate -- it is the caveat
+already recorded in *Expression functions with preconditions are opaque*.
+Every bound a clause needs for its own indexing is stated inside that clause,
+even where it duplicates a conjunct next to it: `Free_Count <= Capacity` is a
+separate conjunct of `Chain_Sound` and is *not* available inside another one,
+so a position is bounded by `Capacity` there and compared with `Free_Count`
+separately.
+
+## An aggregate is a proof convenience and a run-time cost
+
+`Clear` threads every slot onto the free chain. Written as a loop it needed an
+invariant, and its postcondition then rested on carrying that invariant out of
+the loop -- one large goal, and the unstable one described above. Written as
+iterated component associations it defines every element directly and there is
+nothing to carry:
+
+```ada
+      Chain_Pos := [for J in 1 .. Capacity => J];
+```
+
+That is the right form for the three *ghost* arrays, which are erased at run
+time and so cost nothing whatever shape they are in. It was the wrong form for
+`Links`, and this took a run-time test to find rather than a proof: an array
+aggregate is built as a whole-array temporary before being assigned, so at
+`2 ** 20` nodes of twenty bytes `Clear` needed twenty megabytes of stack and
+could not be called at all on a default one. Nothing had ever called it at run
+time, and the proof had nothing to say about it -- stack usage is not among the
+checks.
+
+So `Links` is written slot by slot after all, and pays for one loop invariant.
+The lesson is not that either form is better. It is that the proof and the
+generated code want opposite things here, and that the choice can be made per
+array: the arrays that only the prover reads are free to take the form the
+prover likes.
+
+## What the arena added
+
+`heaps-leftist_arena.adb` is 482 lines against `heaps-leftist.adb`'s 570, and
+its spec is 464 against 208. The weight moved from the body to the contracts,
+and it moved further than those totals show: the body carries 26 `Assert` and
+`Loop_Invariant` pragmas against the single-tree unit's 62, in a body five
+sixths the size.
+
+That is the trade the cached model buys, and it is a better one than expected.
+The invariant clauses and the frames are longer to *write*, because they
+quantify over the roots of a whole forest instead of naming one heap. But
+nothing in the body has to reason about which node belongs to which tree, and
+the compaction that needed the heaviest case analysis in the single-tree unit
+-- moving the last node of the pool into the hole the root leaves -- does not
+exist here at all, because a free chain has no hole to fill. Less than half the
+assertions, for a structure that does strictly more.
+
+At `--level=2`, from a clean session, the arena leaves exactly one check
+unproved against the single-tree unit's seven -- and it is the postcondition of
+`Clear`, the goal the two changes above were made for. Everything else in the
+unit goes through at the level the implicit heaps use.
+
+The two bugs the proof caught are both of one kind, and worth recording because
+neither is an algorithm error. `Allocate` handed back a node before its key was
+stored, and `Extract_Min` zeroed the departing root's `Size` while the node was
+still in use. In both cases the algorithm was right and the arena was
+momentarily *invalid* -- a node in use is required to carry a cached model
+matching its key, and to have `Size` 1 when it has no children. With one heap
+per pool such a window is invisible; with a shared pool the invariant has to
+hold at every subprogram boundary because some other tree's operation may be
+next, so the window is exactly what the proof reports.

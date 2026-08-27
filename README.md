@@ -13,6 +13,7 @@ Verified priority queues backed by arrays. No access types.
 | Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
 | Leftist heap | O(log n) | O(log n) min | Mergeable, explicit tree in a node pool |
+| Leftist arena | O(log n) | O(log n) min | Same tree, shared pool, O(log n) meld |
 | Block-min directory | O(1) | O(n / B + B) min | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | Baseline |
 | Sorted array | O(n) | O(1) min | Baseline |
@@ -33,6 +34,19 @@ one-node heap, extraction merges the two subtrees of the root. Because a merge
 walks only the right spine of each operand, what has to stay short is that
 spine, and the leftist condition -- a node's left subtree is at least as deep
 as its right one -- is what keeps it logarithmic.
+
+It comes in two units, which hold the same tree and differ in who owns the
+pool. `Heaps.Leftist` is a `Heap` object with a pool of its own, holding one
+tree; melding two of them means copying one operand's nodes into the other's
+pool, which is O(m) and throws away the point of the structure.
+`Heaps.Leftist_Arena` makes the pool package state and a heap a root inside it,
+so several trees share one array and a meld is the splice and nothing else.
+The price is that a heap is no longer a first-class object: one arena per
+instantiation, no array of arenas and none passed to a subprogram. For a
+collection of mergeable structures that is the right way round, since the k
+operands of a k-way meld are k trees in one arena rather than k arenas.
+`Heaps.Leftist_Pool` is the library-level instance the tests and benchmarks
+use.
 
 The block-min directory occupies the point between the unsorted baseline and
 a tree. Keys remain unsorted, while a compact second array remembers the
@@ -61,14 +75,13 @@ the verified comparison set.
 
 The catalogue above varies the data structure while holding the operation set
 fixed: `Insert`, `Extract_Min`, and `Extract_Max` for the double-ended pair.
-Two operations that priority queues are commonly asked for are missing, for
-different reasons.
+Two operations that priority queues are commonly asked for are not there
+throughout, for different reasons.
 
 **Meld.** Destructive `Meld (Into, From)`: `Into` receives every key of
 `From`, which is left empty. This is the operation a mergeable heap exists for,
-and until every entry has it the benchmark cannot show the one column in which
-the leftist heap is asymptotically better than everything it is compared
-against. Implemented and proved so far:
+and until every entry has it the benchmark cannot compare a mergeable structure
+against a rebuild across the whole catalogue. Implemented and proved so far:
 
 | Heap | Meld | Cost |
 |------|:----:|------|
@@ -81,7 +94,8 @@ against. Implemented and proved so far:
 | Interval heap | no | append then rebuild |
 | Beap | no | append then rebuild |
 | Block-min directory | yes | O(m), its insertion is already O(1) |
-| Leftist heap | no | O(log n) in principle, and the reason to have the operation at all -- but only once the pool is shared, see below |
+| Leftist heap | no | O(m), it would have to copy into the other pool |
+| Leftist arena | yes | O(log n), a splice of two right spines |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
@@ -99,14 +113,15 @@ output -- and the multiset model of this collection is a scan of an array
 to `Heaps.Models` and the lemmas to go with it, which is shared machinery none
 of the other melds need.
 
-The leftist heap is the open question. Its internal merge already takes two
-roots inside one pool, but the exported `Heap` bundles the pool with the
-assertion that it holds a single tree, so melding two `Heap` objects has to
-copy one operand's nodes into the other's pool -- O(m), which throws away the
-point of the structure. A genuine O(log n) meld needs several trees to live in
-one pool, and that is an API decision affecting every mergeable heap in the
-list below, so it is being taken before the next one is written rather than
-after.
+The leftist heap is the one entry that splices, and it needed the API decision
+described above: several trees in one pool, a heap named by the index of its
+root. `Heaps.Leftist_Arena` is that decision, and its meld allocates, frees and
+copies nothing. What it costs is that a heap stops being a first-class object,
+which is why `Heaps.Leftist` is still here alongside it for the single-heap
+case. The benchmark measures the difference: on a workload that folds sixteen
+one-key heaps into a large accumulator, the arena is flat in `n` where every
+rebuilding heap is linear in it -- four orders of magnitude at
+`n = 1_000_000`. See [OBSERVATIONS.md](OBSERVATIONS.md).
 
 **Decrease-key.** Deliberately out of scope. It needs handles that stay valid
 as keys move, and every implicit heap here relocates keys on every sift, so it
@@ -174,11 +189,17 @@ gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 `heaps_test` checks results against a proved linear-scan oracle. It also checks
-extraction order and key preservation.
+extraction order and key preservation. The arena is checked differently on two
+points, because with several trees in one array there is no range of slots
+holding a given tree's keys and so no scan to compare against: its oracle is
+kept by the test, and it additionally checks the arena's free count across
+every operation, and that a tree an operation did not name comes back with the
+keys it had.
 
-Every implicit heap goes through at `--level=2`. The leftist heap, whose tree
-is a pool of linked nodes rather than an array index, needs `--level=4`; see
-[PROOF.md](PROOF.md) for what its proof took and what carried it.
+Every implicit heap goes through at `--level=2`. The two leftist units, whose
+tree is a pool of linked nodes rather than an array index, need `--level=4` --
+`Heaps.Leftist` leaves seven checks unproved below it and the arena one; see
+[PROOF.md](PROOF.md) for what those proofs took and what carried them.
 
 ## Benchmarks
 
@@ -194,11 +215,15 @@ Each implementation receives the same fixed-seed key sequence. Each scenario
 runs five times; the fastest time is reported in nanoseconds per operation. See
 [OBSERVATIONS.md](OBSERVATIONS.md) for results.
 
-No scenario melds two heaps yet; see [Planned operations](#operations) for why,
-and for what that leaves unmeasured. A single meld is far too fast to time, so
-the workload will be k-way accumulation -- build k heaps and meld them all into
-one -- which makes the timed phase long enough to measure and sweeps the size
-ratio between the operands as the accumulator grows.
+Two scenarios meld, over the entries that have the operation; see
+[Planned operations](#operations) for what is still missing. A single meld is
+far too fast to time, so both are k-way accumulation -- build sixteen heaps and
+fold them one after another into an accumulator -- which makes the timed phase
+long enough to measure and sweeps the size ratio between the operands as the
+accumulator grows. `meld-accumulate` starts from an empty accumulator and
+sixteen operands of `n / 16` keys; `meld-into-full` prefills the accumulator
+with `n` keys and folds in sixteen one-key heaps, which is where a structure
+that rebuilds pays for the accumulator and one that splices does not.
 
 ## Layout
 
