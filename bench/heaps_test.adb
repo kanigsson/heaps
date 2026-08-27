@@ -516,6 +516,14 @@ procedure Heaps_Test is
       B_From : Heaps.Binary.Heap (Extended_Index (Total));
       D_Into : Heaps.Dary.Heap (Extended_Index (Total), Arity);
       D_From : Heaps.Dary.Heap (Extended_Index (Total), Arity);
+      C_Into : Heaps.Block_Min.Heap
+        (Capacity           => Extended_Index (Total),
+         Directory_Capacity =>
+           Heaps.Block_Min.Blocks_For (Extended_Index (Total)));
+      C_From : Heaps.Block_Min.Heap
+        (Capacity           => Extended_Index (Total),
+         Directory_Capacity =>
+           Heaps.Block_Min.Blocks_For (Extended_Index (Total)));
 
       Oracle : array (1 .. Total) of Key_Type;
       Filled : Natural := 0;
@@ -525,6 +533,7 @@ procedure Heaps_Test is
       A_Key : Key_Type;
       B_Key : Key_Type;
       D_Key : Key_Type;
+      C_Key : Key_Type;
       Prev  : Key_Type := Key_Type'First;
 
       procedure Feed (Count : Natural; Into_Target : Boolean);
@@ -541,10 +550,12 @@ procedure Heaps_Test is
                Heaps.Unsorted.Insert (A_Into, K);
                Heaps.Binary.Insert (B_Into, K);
                Heaps.Dary.Insert (D_Into, K);
+               Heaps.Block_Min.Insert (C_Into, K);
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
                Heaps.Dary.Insert (D_From, K);
+               Heaps.Block_Min.Insert (C_From, K);
             end if;
          end loop;
       end Feed;
@@ -555,6 +566,7 @@ procedure Heaps_Test is
       Heaps.Unsorted.Meld (A_Into, A_From);
       Heaps.Binary.Meld (B_Into, B_From);
       Heaps.Dary.Meld (D_Into, D_From);
+      Heaps.Block_Min.Meld (C_Into, C_From);
 
       Check (Heaps.Unsorted.Size (A_Into) = Total,
              "meld: unsorted size is the sum");
@@ -566,6 +578,10 @@ procedure Heaps_Test is
              "meld: binary source is emptied");
       Check (Heaps.Dary.Size (D_Into) = Total, "meld: d-ary size is the sum");
       Check (Heaps.Dary.Is_Empty (D_From), "meld: d-ary source is emptied");
+      Check (Heaps.Block_Min.Size (C_Into) = Total,
+             "meld: block-min size is the sum");
+      Check (Heaps.Block_Min.Is_Empty (C_From),
+             "meld: block-min source is emptied");
 
       --  Sort the oracle so that the drain order can be compared against it
 
@@ -592,11 +608,14 @@ procedure Heaps_Test is
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
          Heaps.Dary.Extract_Min (D_Into, D_Key);
+         Heaps.Block_Min.Extract_Min (C_Into, C_Key);
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
          Check (D_Key = Oracle (I), "meld: d-ary drain matches the oracle");
-         Check (A_Key = B_Key and A_Key = D_Key,
+         Check (C_Key = Oracle (I),
+                "meld: block-min drain matches the oracle");
+         Check (A_Key = B_Key and A_Key = D_Key and A_Key = C_Key,
                 "meld: the implementations agree");
          Check (B_Key >= Prev, "meld: keys come out in non-decreasing order");
          Prev := B_Key;

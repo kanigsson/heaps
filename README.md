@@ -80,12 +80,15 @@ against. Implemented and proved so far:
 | Min-max heap | no | append then rebuild |
 | Interval heap | no | append then rebuild |
 | Beap | no | append then rebuild |
-| Block-min directory | no | copy the keys, recompute the block winners |
+| Block-min directory | yes | O(m), its insertion is already O(1) |
 | Leftist heap | no | O(log n) in principle, and the reason to have the operation at all -- but only once the pool is shared, see below |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
 would flatter the mergeable structures instead of giving them a fair opponent.
+The block-min directory is the exception that proves the rule -- its insertion
+is already O(1), so inserting the keys one at a time *is* the optimal O(m) meld
+there, and no rebuild is needed.
 
 The sorted array is the one entry whose meld is not an append and a rebuild but
 a merge of two runs, and it needs something the others do not. Halfway through a

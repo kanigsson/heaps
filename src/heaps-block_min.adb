@@ -256,6 +256,41 @@ package body Heaps.Block_Min with SPARK_Mode is
          Models.Occurrences (H.Keys, H.Last - 1), K);
    end Insert;
 
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      M0   : constant KM.Multiset := Model (Into) with Ghost;
+      Base : constant Extended_Index := Into.Last;
+   begin
+      for I in 1 .. From.Last loop
+         Insert (Into, From.Keys (I));
+
+         --  Insert has already restored the directory and told us the model
+         --  gained one key; all that is left is to carry that Add out through
+         --  the sum accumulated so far.
+
+         Models.Lemma_Sum_Add
+           (M0, Models.Occurrences (From.Keys, I - 1), From.Keys (I));
+         Models.Lemma_Sum_Empty (M0);
+
+         pragma Loop_Invariant (Is_Heap (Into));
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (Model (Into) = M0 + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (M0);
+      end if;
+
+      From.Last := 0;
+
+      --  Emptying From resets its directory implicitly: Blocks_For (0) is
+      --  zero, so Is_Heap holds over an empty range of blocks.
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------

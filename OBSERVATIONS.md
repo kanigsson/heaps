@@ -349,9 +349,10 @@ extraction.
 
 ## Meld
 
-Five entries have the operation so far: the binary heap and the three d-ary
-instances, which append and rebuild, and the unsorted array, which appends and
-repairs nothing. See the Planned operations section of README.md for the rest,
+Six entries have the operation so far: the binary heap and the three d-ary
+instances, which append and rebuild; the unsorted array, which appends and
+repairs nothing; and the block-min directory, which inserts the keys one at a
+time because its insertion is already O(1). See the Planned operations section of README.md for the rest,
 and for why the leftist heap, the structure the column exists for, is not here
 yet.
 
@@ -381,8 +382,11 @@ one-key heaps into it.
 | 16-ary | 10 000 | 7 786.94 | 13 349.56 |
 | 16-ary | 100 000 | 77 491.06 | 133 191.81 |
 | 16-ary | 1 000 000 | 775 543.04 | 1 340 156.88 |
-| unsorted | 1 000 | 47.50 | 3.75 |
-| unsorted | 10 000 | 454.38 | 3.13 |
+| block-min | 1 000 | 143.75 | 5.63 |
+| block-min | 10 000 | 1 441.25 | 5.63 |
+| block-min | 100 000 | 14 302.69 | 9.38 |
+| unsorted | 1 000 | 46.25 | 3.13 |
+| unsorted | 10 000 | 443.75 | 3.13 |
 
 ### The cost is set by the accumulator, not by the operand
 
@@ -403,6 +407,23 @@ the same number at `n = 1_000` and at `n = 10_000`, and it would be the same at
 `n = 1_000_000`. Against the binary heap's 1.73 million nanoseconds per meld at
 that size this is a factor of half a million, and none of it is constant
 factor: it is O(1) against O(n).
+
+### The block-min directory is the interesting one
+
+The unsorted array's flat meld comes at the price of a linear `Extract_Min`, so
+it wins this column and loses every other one. The block-min directory does not
+make that trade. Its meld is flat in the same way -- 5.63 ns at `n = 1_000` and
+`n = 10_000`, 9.38 at `n = 100_000` -- because its insertion is a store and at
+most one directory entry, so melding is O(m) with no repair. But its extraction
+is O(n / B + B) rather than O(n), which is 14 302 ns/meld on `meld-accumulate`
+at `n = 100_000` against the binary heap's 144 479.
+
+That makes it the first structure here with a flat meld *and* a sub-linear
+extraction, which is much closer to a mergeable heap's profile than the
+unsorted baseline is. It gets there by a different route -- keeping the keys
+unsorted and paying at extraction, rather than keeping a tree and paying at the
+merge -- but for a workload that melds far more often than it extracts, it is
+the entry to beat rather than the binary heap.
 
 That is the shape a mergeable heap would show, which is what makes the
 degenerate baseline worth having in this column before the real thing arrives.

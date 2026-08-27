@@ -60,6 +60,7 @@ begin
    Bench.Dary_4.Meld_Runner.Run (Sizes);
    Bench.Dary_8.Meld_Runner.Run (Sizes);
    Bench.Dary_16.Meld_Runner.Run (Sizes);
+   Bench.Block_Min_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
 
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);

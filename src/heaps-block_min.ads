@@ -110,6 +110,22 @@ package Heaps.Block_Min with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Heap (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --
+   --  Unlike the implicit heaps this one needs no rebuild. Insertion here is
+   --  already O(1) -- a store and at most one directory entry -- so inserting
+   --  the keys of From one at a time is O(m), which is optimal for a structure
+   --  that keeps its keys unsorted. Repeated insertion is the wrong meld for a
+   --  heap whose insertion is logarithmic; it is the right one here.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)
