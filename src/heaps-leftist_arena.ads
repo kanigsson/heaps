@@ -131,6 +131,12 @@ package Heaps.Leftist_Arena with SPARK_Mode is
    function Model (T : Tree) return Key_Multisets.Multiset is
      (Model (Snap, T)) with Ghost;
 
+   Nodes : constant Extended_Index := Capacity;
+   --  How many nodes the arena holds altogether, free and in use. A generic
+   --  formal object is not visible from outside its instance, so a client with
+   --  no other way to name the arena's size cannot compare Room against it
+   --  without this.
+
    function Room return Extended_Index;
    --  How many more keys the arena can hold, over all its trees together
 

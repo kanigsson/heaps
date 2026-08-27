@@ -229,24 +229,41 @@ package body Heaps.Leftist_Arena with SPARK_Mode is
       --  Thread every slot onto the free chain, the last slot at the head, so
       --  that a slot's position along the chain is its own index.
       --
-      --  Written as aggregates rather than a loop. The loop version needed an
-      --  invariant, and the postcondition then rested on carrying that
-      --  invariant out of the loop -- one large goal that sat on the prover's
-      --  time limit and went through or not depending on how loaded the run
-      --  was. An iterated component association defines every element
-      --  directly, so there is nothing to carry.
-
-      Links :=
-        [for J in 1 .. Capacity =>
-           (Left   => (if J = 1 then 0 else J - 1),
-            Right  => 0,
-            Parent => 0,
-            Size   => 0,
-            Dist   => 0)];
+      --  The ghost arrays are written as aggregates rather than in a loop. An
+      --  iterated component association defines every element directly, so
+      --  there is nothing for a loop invariant to carry out; the loop version
+      --  rested its postcondition on carrying one, which was a single large
+      --  goal that sat on the prover's time limit and went through or not
+      --  depending on how loaded the run was. These three arrays are erased at
+      --  run time, so the form costs nothing there.
 
       Chain_Pos := [for J in 1 .. Capacity => J];
       Chain_At  := [for J in 1 .. Capacity => J];
       Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
+
+      --  Links is real, and there the same form is not free: an array
+      --  aggregate is built as a whole-array temporary before being assigned,
+      --  and at the sizes this arena exists for that temporary overflows an
+      --  ordinary stack. So this one array is written slot by slot. It costs
+      --  an invariant, but only over the one array whose elements differ from
+      --  each other, and the three goals above stay in their cheap form.
+
+      for I in 1 .. Capacity loop
+         Links (I) :=
+           (Left   => (if I = 1 then 0 else I - 1),
+            Right  => 0,
+            Parent => 0,
+            Size   => 0,
+            Dist   => 0);
+
+         pragma Loop_Invariant
+           (for all J in 1 .. I =>
+              Links (J) = (Left   => (if J = 1 then 0 else J - 1),
+                           Right  => 0,
+                           Parent => 0,
+                           Size   => 0,
+                           Dist   => 0));
+      end loop;
 
       Free       := Capacity;
       Free_Count := Capacity;
