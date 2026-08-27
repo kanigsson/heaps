@@ -113,10 +113,12 @@ extraction order and key preservation.
 ## Benchmarks
 
 The benchmarks cover filling, draining, mixed extraction and insertion, and
-ascending or descending input. Double-ended tests also drain from the maximum
-end or alternate between both ends. The beap, block-min directory and two array
-baselines have an operation that is worse than logarithmic, so they run over
-fewer sizes than the rest.
+ascending or descending input. The `replace-forward` workload keeps the queue
+size fixed while replacing each extracted key with a strictly greater one, as
+in event queues, recurring schedulers and merging sorted streams. Double-ended
+tests also drain from the maximum end or alternate between both ends. The beap,
+block-min directory and two array baselines have an operation that is worse
+than logarithmic, so they run over fewer sizes than the rest.
 
 Each implementation receives the same fixed-seed key sequence. Each scenario
 runs five times; the fastest time is reported in nanoseconds per operation. See

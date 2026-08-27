@@ -7,6 +7,8 @@ with Interfaces;    use Interfaces;
 
 package body Bench.Driver is
 
+   use type Key_Type;
+
    --  The scenarios. Each of them is a procedure that performs its own
    --  untimed set-up, then reports the elapsed time of the measured phase,
    --  the number of operations it covers, and a checksum of the keys it saw.
@@ -20,6 +22,7 @@ package body Bench.Driver is
    function Fill (N : Positive) return Measure;
    function Drain (N : Positive) return Measure;
    function Churn (N : Positive) return Measure;
+   function Replace_Forward (N : Positive) return Measure;
    function Ascending (N : Positive) return Measure;
    function Descending (N : Positive) return Measure;
 
@@ -103,6 +106,38 @@ package body Bench.Driver is
       return (Clock - Start, 2 * Long_Long_Integer (N), Sum);
    end Churn;
 
+   ---------------------
+   -- Replace_Forward --
+   ---------------------
+
+   function Replace_Forward (N : Positive) return Measure is
+      Initial_G : Generator := Seeded;
+      Delta_G   : Generator := Seeded (34_567_890_123);
+      K         : Key_Type;
+      Increment : Key_Type;
+      Sum       : Checksum_Type := 0;
+      Start     : Time;
+   begin
+      Reset;
+      for I in 1 .. N loop
+         Next (Initial_G, K);
+         Insert (K mod 2 ** 29);
+      end loop;
+
+      Start := Clock;
+      for I in 1 .. N loop
+         Extract_Min (K);
+         Next (Delta_G, Increment);
+         Increment := 1 + Increment mod 2 ** 10;
+         Insert (K + Increment);
+         Sum := Sum + Checksum_Type (I) * Checksum_Type (K);
+      end loop;
+
+      --  Initially K is below 2**29, and even one key receiving all N <=
+      --  2**20 increments of at most 2**10 remains within Key_Type.
+      return (Clock - Start, 2 * Long_Long_Integer (N), Sum);
+   end Replace_Forward;
+
    ---------------
    -- Ascending --
    ---------------
@@ -143,23 +178,31 @@ package body Bench.Driver is
 
    procedure Run (Sizes : Size_Array; Reps : Positive := 5) is
 
-      type Scenario is (S_Fill, S_Drain, S_Churn, S_Ascending, S_Descending);
+      type Scenario is
+        (S_Fill,
+         S_Drain,
+         S_Churn,
+         S_Replace_Forward,
+         S_Ascending,
+         S_Descending);
 
       function Label (S : Scenario) return String is
         (case S is
-            when S_Fill       => "fill",
-            when S_Drain      => "drain",
-            when S_Churn      => "churn",
-            when S_Ascending  => "insert-asc",
-            when S_Descending => "insert-desc");
+            when S_Fill            => "fill",
+            when S_Drain           => "drain",
+            when S_Churn           => "churn",
+            when S_Replace_Forward => "replace-forward",
+            when S_Ascending       => "insert-asc",
+            when S_Descending      => "insert-desc");
 
       function Measure_Of (S : Scenario; N : Positive) return Measure is
         (case S is
-            when S_Fill       => Fill (N),
-            when S_Drain      => Drain (N),
-            when S_Churn      => Churn (N),
-            when S_Ascending  => Ascending (N),
-            when S_Descending => Descending (N));
+            when S_Fill            => Fill (N),
+            when S_Drain           => Drain (N),
+            when S_Churn           => Churn (N),
+            when S_Replace_Forward => Replace_Forward (N),
+            when S_Ascending       => Ascending (N),
+            when S_Descending      => Descending (N));
 
    begin
       for N of Sizes loop

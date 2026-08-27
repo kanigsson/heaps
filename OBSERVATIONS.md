@@ -168,6 +168,34 @@ after a step or two and the extractions dominate.
 Use the interval heap when both ends are read more often than the queue is
 filled, and the min-max heap when insertion dominates.
 
+## Forward replacement
+
+`replace-forward` models queues whose priorities advance: it extracts the
+minimum and replaces it with that key plus a positive pseudo-random increment.
+The size stays fixed, as in merging sorted streams, recurring scheduling and
+event queues that schedule a successor for each event. Unlike `churn`, the
+replacement is always later than the item it replaces.
+
+Results for the verified logarithmic structures at `n = 1_000_000`:
+
+| heap | ns/op |
+|------|------:|
+| binary | 27.44 |
+| 4-ary | 40.24 |
+| 8-ary | 50.68 |
+| 16-ary | 76.96 |
+| weak | 98.98 |
+| min-max | 61.57 |
+| interval | 36.33 |
+
+The binary heap is the fastest general-purpose structure for this pattern. The
+sorted-array baseline is faster over its limited range, at 4.10 ns/op for
+`n = 1_000` and 7.01 for `n = 10_000`: replacements remain near the minimum
+end of the array, so this workload avoids its expensive general insertion
+case. The block-min directory reaches 1278.86 ns/op at `n = 100_000`, against
+28.39 for binary; cheap forward insertion does not offset directory scans and
+block repairs on every extraction.
+
 ## Block-min directory
 
 The block-min directory runs through `n = 100_000`, like the beap. Its fixed
