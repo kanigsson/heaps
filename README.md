@@ -12,6 +12,7 @@ Verified priority queues backed by arrays. No access types.
 | Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
 | Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
+| Block-min directory | O(1) | O(n / B + B) min | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | Baseline |
 | Sorted array | O(n) | O(1) min | Baseline |
 
@@ -24,6 +25,12 @@ trade-off. The beap is the one structure here that is not a tree: its nodes
 form a triangular grid in which a node has two parents as well as two
 children, which buys a much shallower invariant and costs a square root. See
 [OBSERVATIONS.md](OBSERVATIONS.md).
+
+The block-min directory occupies the point between the unsorted baseline and
+a tree. Keys remain unsorted, while a compact second array remembers the
+winner of each 256-key block. Insertion touches one entry; extraction scans the
+directory and repairs at most two blocks after filling the removed slot with
+the last key.
 
 ### Open benchmark entry
 
@@ -46,7 +53,6 @@ the verified comparison set.
 
 - Tournament (winner) tree
 - Min-max tournament tree
-- Block-min directory
 
 ### Array-backed node pools
 
@@ -108,9 +114,9 @@ extraction order and key preservation.
 
 The benchmarks cover filling, draining, mixed extraction and insertion, and
 ascending or descending input. Double-ended tests also drain from the maximum
-end or alternate between both ends. The beap and the two array baselines have
-an operation that is worse than logarithmic, so they run over fewer sizes than
-the rest.
+end or alternate between both ends. The beap, block-min directory and two array
+baselines have an operation that is worse than logarithmic, so they run over
+fewer sizes than the rest.
 
 Each implementation receives the same fixed-seed key sequence. Each scenario
 runs five times; the fastest time is reported in nanoseconds per operation. See

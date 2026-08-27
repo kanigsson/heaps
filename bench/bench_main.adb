@@ -9,6 +9,7 @@
 with Bench;
 with Bench.Beap_Heap;
 with Bench.Binary_Heap;
+with Bench.Block_Min_Heap;
 with Bench.Dary_4;
 with Bench.Dary_8;
 with Bench.Dary_16;
@@ -38,6 +39,7 @@ procedure Bench_Main is
 begin
    Bench.Print_Header;
    Bench.Binary_Heap.Runner.Run (Sizes);
+   Bench.Block_Min_Heap.Runner.Run (Beap_Sizes);
    Bench.Dary_4.Runner.Run (Sizes);
    Bench.Dary_8.Runner.Run (Sizes);
    Bench.Dary_16.Runner.Run (Sizes);

@@ -12,6 +12,7 @@ with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
 with Heaps.Beap;
 with Heaps.Binary;
+with Heaps.Block_Min;
 with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Min_Max;
@@ -25,6 +26,9 @@ procedure Heaps_Test is
 
    Sizes : constant array (1 .. 7) of Positive :=
      [1, 2, 3, 7, 64, 1_000, 10_000];
+
+   Block_Boundary_Sizes : constant array (1 .. 6) of Positive :=
+     [255, 256, 257, 511, 512, 513];
 
    procedure Check (Condition : Boolean; Message : String);
    procedure Check (Condition : Boolean; Message : String) is
@@ -189,6 +193,65 @@ procedure Heaps_Test is
       Check (Heaps.Binary.Is_Empty (H), "heap empty after draining");
       Check (Sum = Back, "the keys that came out are the keys that went in");
    end Test_Binary;
+
+   procedure Test_Block_Min (N : Positive);
+   procedure Test_Block_Min (N : Positive) is
+      Capacity : constant Extended_Index := Extended_Index (N);
+      H     : Heaps.Block_Min.Heap
+        (Capacity            => Capacity,
+         Directory_Capacity => Heaps.Block_Min.Blocks_For (Capacity));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Block_Min.Insert (H, K);
+         Check (Heaps.Block_Min.Size (H) = I,
+                "block-min: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Block_Min.Peek_Min (H) = Heaps.Block_Min.Min_Of (H),
+                "block-min: directory agrees with the array minimum");
+         Heaps.Block_Min.Extract_Min (H, K);
+         Check (K >= Prev,
+                "block-min: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Block_Min.Is_Empty (H),
+             "block-min: empty after draining");
+      Check (Sum = Back, "block-min: nothing lost on the way");
+   end Test_Block_Min;
+
+   procedure Test_Block_Min_Churn (N : Positive);
+   procedure Test_Block_Min_Churn (N : Positive) is
+      Capacity : constant Extended_Index := Extended_Index (N);
+      H     : Heaps.Block_Min.Heap
+        (Capacity            => Capacity,
+         Directory_Capacity => Heaps.Block_Min.Blocks_For (Capacity));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Block_Min.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Block_Min.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Block_Min.Insert (H, Key_Type (State mod 1_000));
+         Check (Heaps.Block_Min.Peek_Min (H) = Heaps.Block_Min.Min_Of (H),
+                "block-min: churn keeps the directory current");
+      end loop;
+   end Test_Block_Min_Churn;
 
    procedure Test_Dary (N : Positive; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Dary (N : Positive; Arity : Heaps.Dary.Arity_Type) is
@@ -377,6 +440,12 @@ procedure Heaps_Test is
    end Test_Interval;
 
 begin
+   --  Exercise both sides of full and partial 256-key blocks. In particular,
+   --  extraction moves the last key across a block boundary at these sizes.
+   for N of Block_Boundary_Sizes loop
+      Test_Block_Min_Churn (N);
+   end loop;
+
    --  Every size from 1 to 200 crosses each of the first twenty layer
    --  boundaries in both directions.
    for N in 1 .. 200 loop
@@ -386,6 +455,7 @@ begin
 
    for N of Sizes loop
       Test_Binary (N);
+      Test_Block_Min (N);
       Test_Weak (N);
       Test_Beap (N);
       Test_Min_Max (N);

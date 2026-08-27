@@ -168,6 +168,35 @@ after a step or two and the extractions dominate.
 Use the interval heap when both ends are read more often than the queue is
 filled, and the min-max heap when insertion dominates.
 
+## Block-min directory
+
+The block-min directory runs through `n = 100_000`, like the beap. Its fixed
+block size is 256 keys.
+
+| n | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
+|---|-------:|--------:|--------:|-------------:|--------------:|
+| 1_000 | 3.02 | 589.42 | 395.88 | 2.20 | 2.22 |
+| 10_000 | 3.07 | 826.44 | 276.44 | 2.20 | 3.58 |
+| 100_000 | 3.04 | 1572.07 | 1142.19 | 2.20 | 3.58 |
+
+Insertion stays near three nanoseconds per key because it appends to the
+unsorted key array and compares against one block winner. It is more than
+three times faster than binary-heap filling at `n = 100_000`, and descending
+input is the only ordered case that repeatedly replaces a winner.
+
+Extraction pays for both sides of the directory trade-off. It scans `n / 256`
+winner indices to choose a block, then scans up to 256 keys for each affected
+block after the last key fills the removed slot. At `n = 10_000`, that reduces
+`drain` from the unsorted baseline's 10745.01 ns/op to 826.44 and `churn` from
+10710.01 to 276.44. The directory is already thirteen times better than a full
+array scan there.
+
+Against trees, the same numbers show the cost of refusing to maintain a
+global shape. At `n = 100_000`, the binary heap drains in 50.70 ns/op and the
+beap in 1011.11, versus 1572.07 for the directory. The directory is therefore
+useful as a small, very cheap insertion index over an otherwise unsorted
+buffer, not as a replacement for a logarithmic heap under sustained removal.
+
 ## Beap
 
 The beap runs only through `n = 100_000`: its operations are O(sqrt n), so a
