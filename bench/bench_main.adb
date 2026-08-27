@@ -14,6 +14,7 @@ with Bench.Dary_4;
 with Bench.Dary_8;
 with Bench.Dary_16;
 with Bench.Interval_Heap;
+with Bench.Leftist_Heap;
 with Bench.Min_Max_Heap;
 with Bench.Open_Heap;
 with Bench.Sorted_Heap;
@@ -44,6 +45,7 @@ begin
    Bench.Dary_8.Runner.Run (Sizes);
    Bench.Dary_16.Runner.Run (Sizes);
    Bench.Weak_Heap.Runner.Run (Sizes);
+   Bench.Leftist_Heap.Runner.Run (Sizes);
    Bench.Min_Max_Heap.Runner.Run (Sizes);
    Bench.Interval_Heap.Runner.Run (Sizes);
    Bench.Open_Heap.Runner.Run (Sizes);

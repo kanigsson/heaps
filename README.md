@@ -12,6 +12,7 @@ Verified priority queues backed by arrays. No access types.
 | Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
 | Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
+| Leftist heap | O(log n) | O(log n) min | Mergeable, explicit tree in a node pool |
 | Block-min directory | O(1) | O(n / B + B) min | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | Baseline |
 | Sorted array | O(n) | O(1) min | Baseline |
@@ -25,6 +26,13 @@ trade-off. The beap is the one structure here that is not a tree: its nodes
 form a triangular grid in which a node has two parents as well as two
 children, which buys a much shallower invariant and costs a square root. See
 [OBSERVATIONS.md](OBSERVATIONS.md).
+
+The leftist heap is the first here whose tree is explicit rather than implied
+by an array index. It is built entirely out of merging: insertion merges a
+one-node heap, extraction merges the two subtrees of the root. Because a merge
+walks only the right spine of each operand, what has to stay short is that
+spine, and the leftist condition -- a node's left subtree is at least as deep
+as its right one -- is what keeps it logarithmic.
 
 The block-min directory occupies the point between the unsorted baseline and
 a tree. Keys remain unsorted, while a compact second array remembers the
@@ -56,7 +64,6 @@ the verified comparison set.
 
 ### Array-backed node pools
 
-- Leftist heap
 - Skew heap
 - Binomial heap
 - Skew binomial heap
@@ -104,11 +111,15 @@ gprbuild -P bench.gpr
 ./heaps_test
 ./open_heap_test
 ./bench_main
-gnatprove -P heaps.gpr -j0 --level=2
+gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 `heaps_test` checks results against a proved linear-scan oracle. It also checks
 extraction order and key preservation.
+
+Every implicit heap goes through at `--level=2`. The leftist heap, whose tree
+is a pool of linked nodes rather than an array index, needs `--level=4`; see
+[PROOF.md](PROOF.md) for what its proof took and what carried it.
 
 ## Benchmarks
 
@@ -133,6 +144,9 @@ heaps.gpr       proof project
 bench.gpr       benchmark project
 sparklib.gpr    local SPARKlib project file
 ```
+
+[PROOF.md](PROOF.md) collects what the proofs cost and what made the
+difference, written up after the first one that was genuinely hard.
 
 ## License
 

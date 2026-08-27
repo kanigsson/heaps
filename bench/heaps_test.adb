@@ -15,6 +15,7 @@ with Heaps.Binary;
 with Heaps.Block_Min;
 with Heaps.Dary;
 with Heaps.Interval;
+with Heaps.Leftist;
 with Heaps.Min_Max;
 with Heaps.Sorted;
 with Heaps.Unsorted;
@@ -101,6 +102,66 @@ procedure Heaps_Test is
          Prev := K;
       end loop;
    end Test_Beap_Churn;
+
+   procedure Test_Leftist (N : Positive);
+   procedure Test_Leftist (N : Positive) is
+      H     : Heaps.Leftist.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Leftist.Insert (H, K);
+         Check (Heaps.Leftist.Size (H) = I, "leftist: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Leftist.Peek_Min (H) = Heaps.Leftist.Min_Of (H),
+                "leftist: peek agrees with the array minimum");
+         Heaps.Leftist.Extract_Min (H, K);
+         Check (K >= Prev, "leftist: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Leftist.Is_Empty (H), "leftist: empty after draining");
+      Check (Sum = Back, "leftist: nothing lost on the way");
+   end Test_Leftist;
+
+   procedure Test_Leftist_Churn (N : Positive);
+   procedure Test_Leftist_Churn (N : Positive) is
+      --  Alternating an extraction and an insertion keeps sending the last
+      --  node of the pool into the hole the root leaves behind, which is
+      --  where a stale link would show up.
+      H     : Heaps.Leftist.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Leftist.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Leftist.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Leftist.Insert (H, Key_Type (State mod 1_000));
+         Check (Heaps.Leftist.Peek_Min (H) = Heaps.Leftist.Min_Of (H),
+                "leftist: churn keeps the smallest key on top");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Leftist.Extract_Min (H, K);
+         Check (K >= Prev, "leftist: churned heap still drains in order");
+         Prev := K;
+      end loop;
+   end Test_Leftist_Churn;
 
    procedure Test_Weak (N : Positive);
    procedure Test_Weak (N : Positive) is
@@ -451,12 +512,14 @@ begin
    for N in 1 .. 200 loop
       Test_Beap_Churn (N);
       Test_Weak_Churn (N);
+      Test_Leftist_Churn (N);
    end loop;
 
    for N of Sizes loop
       Test_Binary (N);
       Test_Block_Min (N);
       Test_Weak (N);
+      Test_Leftist (N);
       Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);

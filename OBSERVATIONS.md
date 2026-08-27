@@ -21,6 +21,7 @@ Results at `n = 1_000_000`:
 | 8-ary | 8.25 | 124.40 | 69.96 | 5.07 | 27.49 |
 | 16-ary | 6.58 | 171.30 | 89.67 | 4.97 | 20.06 |
 | weak | 18.15 | 170.71 | 86.46 | 3.68 | 22.75 |
+| leftist | 98.39 | 428.02 | 285.98 | 168.67 | 7.67 |
 | min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
 | interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
 
@@ -168,6 +169,70 @@ after a step or two and the extractions dominate.
 Use the interval heap when both ends are read more often than the queue is
 filled, and the min-max heap when insertion dominates.
 
+## Leftist heap
+
+The leftist heap is the first structure here whose tree is a pool of linked
+nodes rather than an array index, and the first whose costs are dominated by
+something other than the number of comparisons. Against the binary heap, in
+the same run:
+
+| n | `fill` | `drain` | `churn` | `replace-forward` | `insert-asc` | `insert-desc` |
+|---|-------:|--------:|--------:|------------------:|-------------:|--------------:|
+| 1_000 | 43.32 | 146.30 | 82.33 | 12.55 | 69.22 | 6.97 |
+| 10_000 | 63.86 | 214.11 | 113.97 | 43.18 | 98.29 | 6.99 |
+| 100_000 | 81.68 | 294.09 | 158.63 | 84.14 | 130.12 | 7.53 |
+| 1_000_000 | 98.39 | 428.02 | 285.98 | 131.97 | 168.67 | 7.67 |
+| binary at 1_000_000 | 10.09 | 93.17 | 47.91 | 24.55 | 1.96 | 11.47 |
+
+The two ordered-input columns are the interesting ones, because they disagree
+by a factor of twenty-two with each other and the reason is one comparison.
+Inserting means merging a one-node heap into the heap, and a merge starts by
+asking which of the two roots is smaller.
+
+`insert-desc` gives the answer "the new one" every time. The new node becomes
+the root, the old heap becomes its right subtree, and the merge is over: one
+comparison, three writes, no walk at all. It is the only genuinely constant
+insertion in the collection, and the numbers say so -- 6.97, 6.99, 7.53, 7.67
+across three decades of size, flat to within a nanosecond, against a binary
+heap that climbs from 6.80 to 11.47 as its sift-up path lengthens. This is the
+one column the leftist heap wins, and it wins it by more the larger the heap
+gets.
+
+`insert-asc` gives the opposite answer every time, and the merge then has to
+walk the entire right spine to find where the new largest key belongs:
+168.67 ns/op against 1.96 for the binary heap, a factor of eighty-six. The
+spine is short -- the leftist condition holds it to at most log2 (n + 1), about
+twenty nodes at `n = 1_000_000` -- so twenty is also roughly the number of
+cache misses, because each step is a dependent load of a node the previous
+step named. Eight nanoseconds a step is what a miss to main memory costs. The
+structure is doing the asymptotically right thing and paying full price for
+every level of it.
+
+That is the general shape of the rest of the table. A node here carries a key,
+two children, a parent and two counters: twenty-four bytes against the four an
+implicit heap spends, so the pool is six times the size and a root-to-leaf walk
+is six times as likely to leave cache at every step. `drain` is 4.6 times the
+binary heap's and `churn` 6 times, and extraction pays twice over -- it merges
+the two subtrees of the root, walking both spines, and then moves the last node
+of the pool into the hole to keep the used slots a prefix, which touches three
+more nodes scattered anywhere in the array.
+
+`replace-forward` shows the same thing from the other end. At `n = 1_000` the
+leftist heap is the *faster* of the two, 12.55 against 16.12: the replacement
+key is only slightly above the minimum, so it settles near the top of the tree
+and the walk is short. Three decades later the walk is no longer the cost --
+the memory it walks over is -- and the same workload runs 5.4 times slower than
+the binary heap.
+
+None of this is an argument against the structure, because the benchmark cannot
+measure the thing it is for. A leftist heap melds two heaps of any size in
+O(log n); every implicit heap in this collection would have to rebuild, at
+O(n). The API here has no meld operation, so the one column where the leftist
+heap is asymptotically better than everything else it is being compared against
+is not in the table. What the table does show is the price of buying that
+ability: outside `insert-desc`, an explicit tree in a pool is between four and
+eighty-six times slower than the same tree implied by an array index.
+
 ## Forward replacement
 
 `replace-forward` models queues whose priorities advance: it extracts the
@@ -185,6 +250,7 @@ Results for the verified logarithmic structures at `n = 1_000_000`:
 | 8-ary | 50.68 |
 | 16-ary | 76.96 |
 | weak | 98.98 |
+| leftist | 131.97 |
 | min-max | 61.57 |
 | interval | 36.33 |
 
