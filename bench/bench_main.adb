@@ -18,8 +18,9 @@ procedure Bench_Main is
 
    Baseline_Sizes : constant Bench.Size_Array := [1_000, 10_000];
    --  The two array baselines have a linear operation each, so their
-   --  scenarios are quadratic; running them at the sizes above would take
-   --  hours and say nothing that the small sizes do not already say.
+   --  scenarios are quadratic: each extra decade costs a hundred times the
+   --  wall clock. Two decades already show the growth, and are the difference
+   --  between a suite that runs in seconds and one that does not.
 
 begin
    Bench.Print_Header;
