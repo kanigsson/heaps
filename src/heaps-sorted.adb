@@ -101,8 +101,19 @@ package body Heaps.Sorted with SPARK_Mode is
          pragma Loop_Variant (Decreases => Hole);
       end loop;
 
+      --  The loop stopped because the slot before the hole is not below K,
+      --  which is exactly what K needs to sit there; the invariants cover the
+      --  slot after it. Splitting the order off from the model equations
+      --  keeps the two arguments in separate proof obligations.
+
+      pragma Assert (if Hole > 1 then H.Keys (Hole - 1) >= K);
+      pragma Assert
+        (for all J in 2 .. H.Last => (if J - 1 = Hole then K >= H.Keys (J)));
+
       Before := H.Keys;
       H.Keys (Hole) := K;
+
+      pragma Assert (Is_Sorted (H));
 
       Models.Lemma_Set (Before, H.Keys, Hole, H.Last);
       Models.Lemma_Add_Congruent
