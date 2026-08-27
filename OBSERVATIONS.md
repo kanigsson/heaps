@@ -50,3 +50,72 @@ would close that gap, at the cost of one proof per arity.
 The short version: prefer a wide d-ary heap for insert-dominated workloads
 large enough to miss cache, and a binary heap whenever extraction is on the
 hot path.
+
+## Min-max heap: what does a second end cost?
+
+The min-max heap is the first double-ended structure in the collection, so
+there are two separate questions to ask of it: what it gives up on the
+single-ended workload the other heaps are measured on, and what the two ends
+cost relative to each other. At `n = 1_000_000`:
+
+| heap | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
+|------|-------:|--------:|--------:|-------------:|--------------:|
+| binary | 9.99 | 92.19 | 50.29 | 1.93 | 11.21 |
+| min-max | 13.31 | 176.28 | 88.73 | 12.63 | 13.70 |
+
+Extraction costs about twice as much as on a binary heap, which is roughly the
+comparison count: a min-max sift-down descends two levels per step but has to
+pick the best of up to six nodes — two children and four grandchildren — to do
+it, so it spends about three comparisons per level against the binary heap's
+two, and the grandchildren of a deep node are four cache lines apart where a
+binary heap's two children share one.
+
+The ordered-insert pair is the more interesting row. The binary heap spreads
+across a factor of six between its best case and its worst — 1.93 against
+11.21 — while the min-max heap is flat, 12.63 against 13.70. This is not an
+artefact: a double-ended heap has no cheap direction. Every key of an
+ascending stream is a new minimum and every key of a descending stream is a new
+maximum, so either way the new key climbs to the top of *its own* side and both
+monotone streams are worst cases. The binary heap's cheap case is cheap
+precisely because it is blind to the maximum: an ascending key is worse than
+its parent and stops at the first comparison.
+
+The second end is not the expensive one:
+
+| scenario | ns/op |
+|----------|------:|
+| `drain` (min end) | 176.28 |
+| `drain-max` | 188.35 |
+| `drain-both` | 202.44 |
+| `trim` | 96.63 |
+
+Extracting maxima costs seven per cent more than extracting minima, and
+alternating between the ends — which defeats any locality either pure drain
+gets — costs about ten per cent more than either. There is no cheap end and no
+hidden asymmetry, which is the run-time counterpart of the fact that one piece
+of code, parameterized by the side, serves both directions.
+
+`trim` is the workload the structure exists for: a bounded "best `n` so far"
+queue, where every insertion is paid for by evicting the current worst. At
+96.63 ns per operation it is very close to the binary heap's `churn` (50.29)
+doubled, which is what one would expect, and it needs one array and one
+implementation rather than two heaps kept in step with each other.
+
+### The cost of knowing which level you are on
+
+A min-max heap has to know the parity of the depth of the node it starts from,
+which is something no other heap in the collection needs. Walking up one level
+at a time costs up to 24 halvings per insertion and was plainly visible in the
+measurements. Climbing two levels at a time instead — the side is unchanged
+across a grandparent step, so the walk can stop as soon as it reaches the top
+three nodes, of which only the root is a min node — halves that:
+
+| | `fill` | `insert-asc` | `insert-desc` |
+|---|-------:|-------------:|--------------:|
+| one level at a time | 16.10 | 15.30 | 16.38 |
+| two levels at a time | 13.31 | 12.63 | 13.70 |
+
+About seventeen per cent of the insertion path, for a routine that computes
+nothing the algorithm proper uses. What is left of it is still visible in
+`insert-asc`: 12.63 against the binary heap's 1.93, where the sift itself is
+short and the level computation is most of the work.

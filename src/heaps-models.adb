@@ -85,4 +85,30 @@ package body Heaps.Models with SPARK_Mode is
       end if;
    end Lemma_Set;
 
+   ----------------
+   -- Lemma_Swap --
+   ----------------
+
+   procedure Lemma_Swap
+     (A, R : Key_Array; I, J : Index; Lst : Extended_Index) is
+   begin
+      if Lst = J then
+
+         --  Below J the two arrays differ in the single slot I, so the prefix
+         --  models differ by one exchanged key; adding back the two swapped
+         --  keys -- R (J) = A (I) on one side, A (J) = R (I) on the other --
+         --  makes the two sides equal.
+
+         Lemma_Set (A, R, I, Lst - 1);
+
+      else
+
+         --  Slot Lst is untouched by the swap; peel it off and recurse.
+
+         Lemma_Swap (A, R, I, J, Lst - 1);
+         Lemma_Add_Congruent
+           (Occurrences (R, Lst - 1), Occurrences (A, Lst - 1), A (Lst));
+      end if;
+   end Lemma_Swap;
+
 end Heaps.Models;

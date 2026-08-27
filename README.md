@@ -26,7 +26,7 @@ Ordered roughly by how hard they are to verify.
 | 2 | **d-ary heap** | Shallower tree, fewer sift-up moves, more comparisons per sift-down level. Generalizes #1. | see table below |
 | 3a | **Unsorted array** | Not a heap: O(1) insert, O(n) extract. The baseline the real heaps have to beat. | see table below |
 | 3b | **Sorted array** | The opposite corner: O(n) insert, O(1) extract. Kept in decreasing order so removal needs no shifting. | see table below |
-| 4 | **Min-max heap** | Alternating min and max levels: a double-ended queue in one array. | planned |
+| 4 | **Min-max heap** | Alternating min and max levels: a double-ended queue in one array. | see table below |
 | 5 | **Interval heap** (twin heap) | Double-ended too, but each node holds a `[min, max]` interval. | planned |
 | 6 | **Beap** (bi-parental heap) | Nodes have two parents and two children; O(√n) operations. | planned |
 | 7 | **Weak heap** | Relaxed ordering plus a bit array of "reverse" flags; near-optimal comparison count. | planned |
@@ -70,9 +70,10 @@ Each heap is taken through the SPARK assurance levels in order:
 | d-ary heap | ✅ | ✅ | ✅ |
 | Unsorted array | ✅ | ✅ | ✅ |
 | Sorted array | ✅ | ✅ | ✅ |
+| Min-max heap | ✅ | ✅ | ✅ |
 
 `gnatprove -P heaps.gpr -j0 --level=2 -f` currently reports
-**`Success: all checks proved (656 checks)`** — that covers `src/` and the part
+**`Success: all checks proved (1121 checks)`** — that covers `src/` and the part
 of SPARKlib the project uses.
 
 The d-ary heap takes the arity as a *discriminant* of the heap type rather
@@ -127,6 +128,55 @@ that integer division once — `Lemma_Child_Range`, the only nonlinear step in
 the unit — is what lets every other proof in `Heaps.Dary` reason about
 "the children of the hole" as a contiguous slice.
 
+The min-max heap is the first one whose specification grows: `Extract_Max`
+carries the mirror image of the `Extract_Min` contract, with `Is_Maximum` and
+`Peek_Max` in place of their counterparts, against the same multiset model.
+Two things about its proof were not true of the heaps before it.
+
+The first is that the *local* characterisation of the ordering is the wrong
+invariant to carry. A min-max heap can be defined locally — each node against
+its parent and against its grandparent — and that definition is equivalent to
+the usual one, by induction. But a sift step moves a key across two levels, and
+what justifies the move is a bound on a whole subtree; deriving that bound from
+the local property goes through the very constraint the step is in the middle
+of repairing. So `Is_Heap` is stated here in its strong form outright:
+
+```ada
+function Is_Heap (H : Heap) return Boolean is
+  (for all A in 1 .. H.Last =>
+     (for all D in 1 .. H.Last =>
+        (if Is_Ancestor (A, D)
+         then Ordered (Min_Level (A), H.Keys (A), H.Keys (D)))));
+```
+
+Every min node is a lower bound and every max node an upper bound of its own
+subtree. `Is_Ancestor` is recursive over the indices alone, so no operation can
+disturb it, and it carries `2 * A <= D` as a postcondition — the one fact about
+descendants that nearly every proof in the unit needs, for indices the prover
+picks itself rather than ones a lemma could be aimed at.
+
+The second is that both halves of the heap are one piece of code. Every
+comparison in the unit goes through
+
+```ada
+function Ordered (Min_Side : Boolean; A, B : Key_Type) return Boolean is
+  (if Min_Side then A <= B else B <= A);
+```
+
+so the side is a variable, `Is_Heap` is already parametric in it, and one
+`Sift_Up`, one `Sift_Down` and one set of step lemmas cover the min side and
+the max side at once instead of being written and proved twice as mirror
+images. It also removes a proof: when a sift-down exchanges a node with its
+best *child* rather than its best grandchild, the textbook algorithm stops
+there and has to argue separately that it may. Here the descent just continues
+with the side flipped — the invariant is the same statement either way — and
+the argument that it stops immediately is one the prover makes on its own.
+
+The multiset side is where the swap-based formulation pays. `Models.Lemma_Swap`
+says that exchanging two slots leaves the model alone, so every intermediate
+rearrangement is silent and the model reasoning of an operation reduces to the
+single slot that is genuinely appended or dropped.
+
 ### Run-time cost of the ghost code
 
 None. The model is a recursive functional multiset and evaluating it would make
@@ -160,7 +210,9 @@ gnatprove -P heaps.gpr -j0 --level=2       # proof
 
 `heaps_test` cross-checks `Peek_Min` against `Min_Of`, a proved linear-scan
 oracle, and checks that a drained heap yields its keys in non-decreasing order
-and that nothing is lost on the way.
+and that nothing is lost on the way. A double-ended heap is drained from the
+outside in instead, checking that neither end ever backtracks and that the two
+of them meet in the middle.
 
 ## Benchmark scenarios
 
@@ -176,6 +228,16 @@ cross-check two implementations against each other.
 | `insert-asc` | `n` inserts in increasing key order — best case for sift-up |
 | `insert-desc` | `n` inserts in decreasing key order — worst case for sift-up |
 
+Heap kinds that have two ends are additionally run through
+`Bench.Deque_Driver`, whose rows are not comparable with the table above — they
+exist to measure what the second end costs relative to the first.
+
+| Scenario | Measured phase |
+|----------|----------------|
+| `drain-max` | `n` extractions of the maximum from a heap pre-filled with `n` random keys |
+| `drain-both` | `n` extractions alternating between the two ends, so the keys come out from the outside in |
+| `trim` | `n` × (insert followed by extract-max): a bounded "best `n` so far" queue |
+
 Each scenario is run 5 times and the fastest run is reported, in nanoseconds
 per operation. `insert-asc` and `insert-desc` swap roles between the binary
 heap and the sorted array: ascending keys are the cheap case for a min-heap
@@ -187,8 +249,8 @@ quadratic; `bench_main` runs them only up to `n = 10_000`.
 
 Because every heap kind sees the same key stream, the checksum column is a
 cross-implementation oracle: the binary heap, the three d-ary arities, the
-sorted array and the unsorted array all print the same checksum for the same
-scenario and size, including the rank-weighted `drain` checksum that depends on
+min-max heap, the sorted array and the unsorted array all print the same
+checksum for the same scenario and size, including the rank-weighted `drain` checksum that depends on
 the order keys come out.
 
 The findings the benchmark has produced so far — which heap kind wins which

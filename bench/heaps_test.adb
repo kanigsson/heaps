@@ -12,6 +12,7 @@ with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
 with Heaps.Binary;
 with Heaps.Dary;
+with Heaps.Min_Max;
 with Heaps.Sorted;
 with Heaps.Unsorted;
 
@@ -161,9 +162,54 @@ procedure Heaps_Test is
       Check (Sum = Back, "unsorted: nothing lost on the way");
    end Test_Unsorted;
 
+   procedure Test_Min_Max (N : Positive);
+   procedure Test_Min_Max (N : Positive) is
+      H     : Heaps.Min_Max.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Low   : Key_Type := Key_Type'First;
+      High  : Key_Type := Key_Type'Last;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Min_Max.Insert (H, K);
+         Check (Heaps.Min_Max.Size (H) = I, "min-max: size after insert");
+         Check (Heaps.Min_Max.Peek_Min (H) = Heaps.Min_Max.Min_Of (H),
+                "min-max: peek-min agrees with the array minimum");
+         Check (Heaps.Min_Max.Peek_Max (H) = Heaps.Min_Max.Max_Of (H),
+                "min-max: peek-max agrees with the array maximum");
+      end loop;
+
+      --  Take the keys out from the outside in: the two ends have to meet in
+      --  the middle, which checks both sift directions at once.
+
+      for I in 1 .. N loop
+         if I mod 2 = 1 then
+            Heaps.Min_Max.Extract_Min (H, K);
+            Check (K >= Low, "min-max: the low end never goes back down");
+            Low := K;
+         else
+            Heaps.Min_Max.Extract_Max (H, K);
+            Check (K <= High, "min-max: the high end never goes back up");
+            High := K;
+         end if;
+
+         Check (Low <= High, "min-max: the two ends have not crossed");
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Min_Max.Is_Empty (H), "min-max: empty after draining");
+      Check (Sum = Back, "min-max: nothing lost on the way");
+   end Test_Min_Max;
+
 begin
    for N of Sizes loop
       Test_Binary (N);
+      Test_Min_Max (N);
       for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop
          Test_Dary (N, Arity);
       end loop;

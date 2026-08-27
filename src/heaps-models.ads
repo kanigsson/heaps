@@ -92,4 +92,23 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
    --  one side and the new key on the other — so that it needs no
    --  precondition about the discarded key still being present.
 
+   procedure Lemma_Swap
+     (A, R : Key_Array; I, J : Index; Lst : Extended_Index)
+     with Pre  => A'First = 1
+                  and then R'First = 1
+                  and then A'Last = R'Last
+                  and then Lst <= A'Last
+                  and then I < J
+                  and then J <= Lst
+                  and then R (I) = A (J)
+                  and then R (J) = A (I)
+                  and then (for all M in 1 .. Lst =>
+                              (if M /= I and M /= J then R (M) = A (M))),
+          Post => Occurrences (R, Lst) = Occurrences (A, Lst),
+          Subprogram_Variant => (Decreases => Lst);
+   --  Exchanging the contents of two slots leaves the model alone. This is
+   --  what makes a swap-based sift cheap to verify: the whole model argument
+   --  of an operation reduces to the one slot that is genuinely added or
+   --  removed, and every intermediate rearrangement is silent.
+
 end Heaps.Models;
