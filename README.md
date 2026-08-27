@@ -8,6 +8,7 @@ Verified priority queues backed by arrays. No access types.
 |------|--------|---------|-------|
 | Binary heap | O(log n) | O(log n) min | Binary min-heap |
 | d-ary heap | O(log\_d n) | O(d log\_d n) min | Configurable arity |
+| Weak heap | O(log n) | O(log n) min | One flip bit per node, half the comparisons |
 | Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
 | Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
@@ -15,7 +16,10 @@ Verified priority queues backed by arrays. No access types.
 | Sorted array | O(n) | O(1) min | Baseline |
 
 The d-ary heap's arity is a type discriminant, so one proof covers all valid
-arities. The two double-ended queues take opposite sides of the same
+arities. The weak heap relaxes the binary heap in a single place -- a node
+dominates its right subtree only -- which lets a sift step exchange the two
+subtrees of a node instead of choosing between them, and halves the number of
+comparisons. The two double-ended queues take opposite sides of the same
 trade-off. The beap is the one structure here that is not a tree: its nodes
 form a triangular grid in which a node has two parents as well as two
 children, which buys a much shallower invariant and costs a square root. See
@@ -37,10 +41,6 @@ what an implementation optimized for those workloads can do, not as part of
 the verified comparison set.
 
 ## Planned
-
-### Implicit array heaps
-
-- Weak heap
 
 ### Array-backed node pools
 

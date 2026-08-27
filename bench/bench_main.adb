@@ -17,6 +17,7 @@ with Bench.Min_Max_Heap;
 with Bench.Open_Heap;
 with Bench.Sorted_Heap;
 with Bench.Unsorted_Heap;
+with Bench.Weak_Heap;
 
 procedure Bench_Main is
 
@@ -40,6 +41,7 @@ begin
    Bench.Dary_4.Runner.Run (Sizes);
    Bench.Dary_8.Runner.Run (Sizes);
    Bench.Dary_16.Runner.Run (Sizes);
+   Bench.Weak_Heap.Runner.Run (Sizes);
    Bench.Min_Max_Heap.Runner.Run (Sizes);
    Bench.Interval_Heap.Runner.Run (Sizes);
    Bench.Open_Heap.Runner.Run (Sizes);

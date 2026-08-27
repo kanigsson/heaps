@@ -20,6 +20,7 @@ Results at `n = 1_000_000`:
 | 4-ary | 10.92 | 91.06 | 58.84 | 5.20 | 40.81 |
 | 8-ary | 8.25 | 124.40 | 69.96 | 5.07 | 27.49 |
 | 16-ary | 6.58 | 171.30 | 89.67 | 4.97 | 20.06 |
+| weak | 18.15 | 170.71 | 86.46 | 3.68 | 22.75 |
 | min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
 | interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
 
@@ -39,6 +40,68 @@ reduce the full-path cost in `insert-desc`, but none catches the binary heap.
 
 Use binary for mixed or extraction-heavy workloads. The 8- and 16-ary heaps
 are useful when insertion dominates.
+
+### Weak heap
+
+The weak heap is the one implementation here whose selling point is a count
+rather than a shape. Its extraction performs one key comparison per node of
+the left spine and no others: 19 comparisons at `n = 1_000_000`, against the
+39 or so a classic binary sift-down performs, which spends one comparison per
+level choosing the smaller child and a second testing it against the key being
+moved down. Halving the comparisons is what the flip bits are for.
+
+It does not pay off here:
+
+| n | `fill` | `drain` | binary `drain` | ratio |
+|---|-------:|--------:|---------------:|------:|
+| 1_000 | 7.61 | 70.60 | 21.91 | 3.22 |
+| 10_000 | 17.90 | 102.48 | 34.48 | 2.97 |
+| 100_000 | 18.21 | 133.87 | 50.18 | 2.67 |
+| 1_000_000 | 18.15 | 170.71 | 97.41 | 1.75 |
+
+Half the comparisons and still between two and three times the wall clock over
+most of the range: a level of a weak-heap sift costs several times what a level
+of a binary one costs. Four things make up the difference. There are two arrays
+instead of one, so a sift runs two dependent load streams rather than one.
+Extraction walks the spine twice -- down to find its last node, then back up
+joining -- where a binary sift-down walks its path once. About half the levels
+write a flip bit back. And a join exchanges two keys, so it writes two slots
+per level, where the hole technique the binary and d-ary heaps use writes one.
+
+What the last column shows is that the gap is closing, and closing for a reason
+that has nothing to do with comparisons. Over the last decade the binary heap's
+`drain` almost doubles, from 50.18 to 97.41, while the weak heap's grows by a
+quarter. Both heaps have the same tree and follow a root-to-leaf path of the
+same length, so both take the same number of cache misses on the key array once
+the array stops fitting in cache; the weak heap's per-level surcharge is
+instructions and stores, and those stop mattering when the machine is waiting
+on memory. The two curves do not meet inside the range this collection is
+bounded to -- the last decade closes about a third of the gap, and the
+capacity limit leaves barely a decade of headroom above `n = 1_000_000` -- but
+the direction is clear
+enough to say that the weak heap is at its least bad where a priority queue is
+usually at its most expensive.
+
+The second array costs a byte a node, a megabyte at `n = 1_000_000`. Packing
+it, one bit a node rather than one byte, was measured and made things worse
+everywhere: `fill` at `n = 100_000` goes from 18.21 to 19.72 and `insert-desc`
+from 19.04 to 24.34. The shifting and masking cost more than the eightfold
+reduction in the size of the second array saves.
+
+`insert-asc` is the sharpest illustration of the constant factor, at 3.68
+ns/op against 1.90 for the binary heap. An ascending stream makes every new key
+the largest in the heap, so insertion stops after a single comparison in both
+implementations -- but the weak heap has to find the node to compare against
+first. The climb is short, since a node is a left child about half the time and
+the expected walk is about one step, yet it is a dependent load into the second
+array before the one comparison can happen, and it doubles the cost of the
+cheapest insertion there is.
+
+The conclusion is not that the structure is a poor one. It is that it optimizes
+the resource that is not scarce here: comparing two `Integer`s is free, and the
+weak heap spends memory traffic to save it. With a key whose comparison is
+expensive -- a long string, a record with a comparator -- the count in the first
+paragraph is the number that decides, and the ranking would invert.
 
 ### Min-max heap
 

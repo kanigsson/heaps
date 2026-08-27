@@ -17,6 +17,7 @@ with Heaps.Interval;
 with Heaps.Min_Max;
 with Heaps.Sorted;
 with Heaps.Unsorted;
+with Heaps.Weak;
 
 procedure Heaps_Test is
 
@@ -96,6 +97,66 @@ procedure Heaps_Test is
          Prev := K;
       end loop;
    end Test_Beap_Churn;
+
+   procedure Test_Weak (N : Positive);
+   procedure Test_Weak (N : Positive) is
+      H     : Heaps.Weak.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Weak.Insert (H, K);
+         Check (Heaps.Weak.Size (H) = I, "weak: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Weak.Peek_Min (H) = Heaps.Weak.Min_Of (H),
+                "weak: peek agrees with the array minimum");
+         Heaps.Weak.Extract_Min (H, K);
+         Check (K >= Prev, "weak: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Weak.Is_Empty (H), "weak: empty after draining");
+      Check (Sum = Back, "weak: nothing lost on the way");
+   end Test_Weak;
+
+   procedure Test_Weak_Churn (N : Positive);
+   procedure Test_Weak_Churn (N : Positive) is
+      --  Alternating an extraction and an insertion keeps the tree at the
+      --  same size while the flip bits go on being rewritten, which is where
+      --  a node could end up answering to the wrong ancestor.
+      H     : Heaps.Weak.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Weak.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Weak.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Weak.Insert (H, Key_Type (State mod 1_000));
+         Check (Heaps.Weak.Peek_Min (H) = Heaps.Weak.Min_Of (H),
+                "weak: churn keeps the smallest key on top");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Weak.Extract_Min (H, K);
+         Check (K >= Prev, "weak: churned heap still drains in order");
+         Prev := K;
+      end loop;
+   end Test_Weak_Churn;
 
    procedure Test_Binary (N : Positive);
    procedure Test_Binary (N : Positive) is
@@ -320,10 +381,12 @@ begin
    --  boundaries in both directions.
    for N in 1 .. 200 loop
       Test_Beap_Churn (N);
+      Test_Weak_Churn (N);
    end loop;
 
    for N of Sizes loop
       Test_Binary (N);
+      Test_Weak (N);
       Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);
