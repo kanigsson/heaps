@@ -7,6 +7,7 @@
 --  same key sequence.
 
 with Bench;
+with Bench.Beap_Heap;
 with Bench.Binary_Heap;
 with Bench.Dary_4;
 with Bench.Dary_8;
@@ -21,6 +22,11 @@ procedure Bench_Main is
 
    Sizes : constant Bench.Size_Array :=
      [1_000, 10_000, 100_000, 1_000_000];
+
+   Beap_Sizes : constant Bench.Size_Array := [1_000, 10_000, 100_000];
+   --  The beap spends O(sqrt n) on an operation, so a decade of size costs it
+   --  a factor of about thirty. Three decades are enough to show that growth
+   --  without holding the rest of the suite back.
 
    Baseline_Sizes : constant Bench.Size_Array := [1_000, 10_000];
    --  The two array baselines have a linear operation each, so their
@@ -37,6 +43,7 @@ begin
    Bench.Min_Max_Heap.Runner.Run (Sizes);
    Bench.Interval_Heap.Runner.Run (Sizes);
    Bench.Open_Heap.Runner.Run (Sizes);
+   Bench.Beap_Heap.Runner.Run (Beap_Sizes);
    Bench.Sorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Unsorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);

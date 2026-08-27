@@ -105,6 +105,48 @@ after a step or two and the extractions dominate.
 Use the interval heap when both ends are read more often than the queue is
 filled, and the min-max heap when insertion dominates.
 
+## Beap
+
+The beap runs only through `n = 100_000`: its operations are O(sqrt n), so a
+decade of size costs it a factor of about three rather than the fifteen percent
+it costs a tree heap.
+
+| n | `fill` | `drain` | `churn` | `insert-asc` | `insert-desc` |
+|---|-------:|--------:|--------:|-------------:|--------------:|
+| 1_000 | 32.31 | 93.61 | 92.79 | 2.85 | 58.85 |
+| 10_000 | 110.24 | 295.83 | 220.68 | 2.68 | 167.72 |
+| 100_000 | 319.35 | 1008.24 | 943.64 | 2.58 | 520.98 |
+
+For comparison, the binary heap at `n = 100_000` does `fill` in 9.60 and
+`drain` in 48.66.
+
+Each decade multiplies `fill`, `drain` and `insert-desc` by about three, which
+is the sqrt(10) the layer count predicts: a beap of n nodes is sqrt(2 n) layers
+deep, 447 of them at `n = 100_000`.
+
+The interesting number is `fill`, not `drain`. Draining is 21 times slower than
+the binary heap, which is what an O(sqrt n) descent against an O(log n) one
+buys. Filling is 33 times slower, and that gap comes from somewhere else: a
+binary heap inserts in constant expected time, and a beap does not. Half the
+nodes of a binary tree sit in its last layer, so a random key stops after a
+step or two. The last layer of a beap holds sqrt(2 n) of its n nodes -- a
+vanishing fraction -- so a random key has to climb until it meets a layer whose
+keys are as large as it is, which is on average a third of the way to the top.
+The measurements bear the fraction out: `fill` is close to a third of `drain`
+at all three sizes.
+
+`insert-asc` is the case where a beap costs nothing at all. An ascending stream
+makes every new key the largest in the heap, so it stays where it lands and the
+sift stops after one comparison, at 2.58 ns/op against 1.88 for the binary
+heap. `insert-desc` is the opposite: every key is a new minimum and travels the
+full height, at 520.98.
+
+The beap is not a competitive priority queue and is not meant to be. What it
+offers is the smallest structural invariant in the collection -- no tree, just
+a triangular grid where the children of the node at index I in layer L are at
+I + L and I + L + 1 and its parents at I - L and I - L + 1 -- and a heap whose
+depth can be traded against its width.
+
 ## Array baselines
 
 The linear baselines run only through `n = 10_000`:

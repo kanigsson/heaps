@@ -10,12 +10,16 @@ Verified priority queues backed by arrays. No access types.
 | d-ary heap | O(log\_d n) | O(d log\_d n) min | Configurable arity |
 | Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
 | Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
+| Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
 | Unsorted array | O(1) | O(n) min | Baseline |
 | Sorted array | O(n) | O(1) min | Baseline |
 
 The d-ary heap's arity is a type discriminant, so one proof covers all valid
 arities. The two double-ended queues take opposite sides of the same
-trade-off: see [OBSERVATIONS.md](OBSERVATIONS.md).
+trade-off. The beap is the one structure here that is not a tree: its nodes
+form a triangular grid in which a node has two parents as well as two
+children, which buys a much shallower invariant and costs a square root. See
+[OBSERVATIONS.md](OBSERVATIONS.md).
 
 ### Open benchmark entry
 
@@ -36,7 +40,6 @@ the verified comparison set.
 
 ### Implicit array heaps
 
-- Beap
 - Weak heap
 
 ### Array-backed node pools
@@ -92,7 +95,9 @@ extraction order and key preservation.
 
 The benchmarks cover filling, draining, mixed extraction and insertion, and
 ascending or descending input. Double-ended tests also drain from the maximum
-end or alternate between both ends.
+end or alternate between both ends. The beap and the two array baselines have
+an operation that is worse than logarithmic, so they run over fewer sizes than
+the rest.
 
 Each implementation receives the same fixed-seed key sequence. Each scenario
 runs five times; the fastest time is reported in nanoseconds per operation. See

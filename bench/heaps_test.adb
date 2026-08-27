@@ -10,6 +10,7 @@
 
 with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
+with Heaps.Beap;
 with Heaps.Binary;
 with Heaps.Dary;
 with Heaps.Interval;
@@ -32,6 +33,69 @@ procedure Heaps_Test is
          Failures := Failures + 1;
       end if;
    end Check;
+
+   procedure Test_Beap (N : Positive);
+   procedure Test_Beap (N : Positive) is
+      H     : Heaps.Beap.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Beap.Insert (H, K);
+         Check (Heaps.Beap.Size (H) = I, "beap: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Beap.Peek_Min (H) = Heaps.Beap.Min_Of (H),
+                "beap: peek agrees with the array minimum");
+         Heaps.Beap.Extract_Min (H, K);
+         Check (K >= Prev, "beap: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Beap.Is_Empty (H), "beap: empty after draining");
+      Check (Sum = Back, "beap: nothing lost on the way");
+   end Test_Beap;
+
+   procedure Test_Beap_Churn (N : Positive);
+   procedure Test_Beap_Churn (N : Positive) is
+      --  Alternating an extraction and an insertion holds the size at the
+      --  boundary between two layers for as long as we like, which is exactly
+      --  where the bookkeeping of the next free slot can be off by one.
+      H     : Heaps.Beap.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Beap.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Beap.Extract_Min (H, K);
+         Check (K = Heaps.Beap.Min_Of (H) or else Heaps.Beap.Is_Empty (H)
+                  or else K <= Heaps.Beap.Min_Of (H),
+                "beap: churn keeps extracting a minimum");
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Beap.Insert (H, Key_Type (State mod 1_000));
+         Check (Heaps.Beap.Peek_Min (H) = Heaps.Beap.Min_Of (H),
+                "beap: churn keeps the smallest key on top");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Beap.Extract_Min (H, K);
+         Check (K >= Prev, "beap: churned heap still drains in order");
+         Prev := K;
+      end loop;
+   end Test_Beap_Churn;
 
    procedure Test_Binary (N : Positive);
    procedure Test_Binary (N : Positive) is
@@ -252,8 +316,15 @@ procedure Heaps_Test is
    end Test_Interval;
 
 begin
+   --  Every size from 1 to 200 crosses each of the first twenty layer
+   --  boundaries in both directions.
+   for N in 1 .. 200 loop
+      Test_Beap_Churn (N);
+   end loop;
+
    for N of Sizes loop
       Test_Binary (N);
+      Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);
       for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop

@@ -10,3 +10,4 @@ gnatprove-run.txt
 # Executables
 /bench_main
 /heaps_test
+/open_heap_test
