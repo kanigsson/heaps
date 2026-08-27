@@ -68,11 +68,13 @@ package body Heaps.Unsorted with SPARK_Mode is
       Base   : constant Extended_Index := Into.Last;
       Cap    : constant Extended_Index := Into.Capacity;
 
-      Prev : Key_Array (1 .. Cap) := Into.Keys with Ghost;
+      Prev : Key_Array (1 .. Cap) with Ghost;
       --  Into's keys at the top of the current iteration, which the invariant
       --  established by the previous one speaks about. It is a variable
       --  outside the loop rather than a constant inside it because SPARK does
-      --  not accept a non-scalar declaration ahead of a loop invariant.
+      --  not accept a non-scalar declaration ahead of a loop invariant. It is
+      --  left to the default value of its component type, since the first
+      --  statement of every iteration overwrites it.
    begin
       for I in 1 .. From.Last loop
          Prev := Into.Keys;

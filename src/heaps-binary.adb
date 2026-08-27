@@ -298,7 +298,7 @@ package body Heaps.Binary with SPARK_Mode is
       Joined : KM.Multiset with Ghost;
       --  The model of the concatenation, which the rebuild has to preserve
 
-      Prev : Key_Array (1 .. Cap) := Into.Keys with Ghost;
+      Prev : Key_Array (1 .. Cap) with Ghost;
       --  See the comment on the homonym in Heaps.Unsorted.Meld
    begin
       --  Append the keys of From. This is the same argument as the unsorted
