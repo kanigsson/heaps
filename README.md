@@ -42,6 +42,12 @@ the verified comparison set.
 
 ## Planned
 
+### Array-backed selection structures
+
+- Tournament (winner) tree
+- Min-max tournament tree
+- Block-min directory
+
 ### Array-backed node pools
 
 - Leftist heap
@@ -51,12 +57,19 @@ the verified comparison set.
 - Pairing heap
 - Rank-pairing heap
 - Fibonacci heap
+- Sorted linked list
+- AA tree
+- AVL tree
 
 ### Integer-key queues
 
 - Bucket queue
 - Radix heap
 - Bitmapped heap
+- Hierarchical bitmap queue
+- Binary trie
+- Patricia trie
+- Calendar queue
 
 ## Verification
 
