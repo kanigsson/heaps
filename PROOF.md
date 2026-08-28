@@ -13,6 +13,11 @@ that a meld can be a splice. The arena inherits the earlier lessons unchanged
 -- it is the same tree, and its invariant is flat for the same reasons -- and
 adds the ones that only come up once a pool holds more than one tree.
 
+Those two names were true when the sections were written. The private-pool unit
+has since been dropped and the arena took its name, so `Heaps.Leftist` is today
+what these notes call `Heaps.Leftist_Arena`. Nothing below is rewritten for it;
+the last section says why the unit went.
+
 ## Keep the invariant flat
 
 The temptation with a linked structure is to describe it the way a textbook
