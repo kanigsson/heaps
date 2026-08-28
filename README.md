@@ -4,19 +4,19 @@ Verified priority queues backed by arrays. No access types.
 
 ## Implementations
 
-| Heap | Insert | Extract | Notes |
-|------|--------|---------|-------|
-| Binary heap | O(log n) | O(log n) min | Binary min-heap |
-| d-ary heap | O(log\_d n) | O(d log\_d n) min | Configurable arity |
-| Weak heap | O(log n) | O(log n) min | One flip bit per node, half the comparisons |
-| Min-max heap | O(log n) | O(log n) min or max | Double-ended queue |
-| Interval heap | O(log n) | O(log n) min or max | Double-ended, two keys per node |
-| Beap | O(sqrt n) | O(sqrt n) min | Triangular layers, two parents per node |
-| Leftist heap | O(log n) | O(log n) min | Mergeable, explicit tree in a node pool |
-| Leftist arena | O(log n) | O(log n) min | Same tree, shared pool, O(log n) meld |
-| Block-min directory | O(1) | O(n / B + B) min | One winner per block, B = 256 |
-| Unsorted array | O(1) | O(n) min | Baseline |
-| Sorted array | O(n) | O(1) min | Baseline |
+| Heap | Insert | Extract | Proved | Notes |
+|------|--------|---------|:------:|-------|
+| Binary heap | O(log n) | O(log n) min | yes | Binary min-heap |
+| d-ary heap | O(log\_d n) | O(d log\_d n) min | yes | Configurable arity |
+| Weak heap | O(log n) | O(log n) min | yes | One flip bit per node, half the comparisons |
+| Min-max heap | O(log n) | O(log n) min or max | yes | Double-ended queue |
+| Interval heap | O(log n) | O(log n) min or max | yes | Double-ended, two keys per node |
+| Beap | O(sqrt n) | O(sqrt n) min | yes | Triangular layers, two parents per node |
+| Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a node pool |
+| Leftist arena | O(log n) | O(log n) min | yes | Same tree, shared pool, O(log n) meld |
+| Block-min directory | O(1) | O(n / B + B) min | yes | One winner per block, B = 256 |
+| Unsorted array | O(1) | O(n) min | yes | Baseline |
+| Sorted array | O(n) | O(1) min | yes | Baseline |
 
 The d-ary heap's arity is a type discriminant, so one proof covers all valid
 arities. The weak heap relaxes the binary heap in a single place -- a node
@@ -80,19 +80,19 @@ left empty. This is the operation a mergeable heap exists for, and every entry
 in the catalogue has it, so the benchmark can compare a splice against a
 rebuild across the whole set.
 
-| Heap | Cost | How |
-|------|------|-----|
-| Unsorted array | O(m) | a copy and nothing to repair |
-| Binary heap | O(n + m) | append then rebuild bottom-up |
-| d-ary heap | O(n + m) | as the binary heap |
-| Weak heap | O(n + m) | append then join each node to its ancestor |
-| Min-max heap | O(n + m) | append then trickle down, bottom-up |
-| Interval heap | O(n + m) | append, pair the slots, then both ends |
-| Sorted array | O(n + m) | the merge of two sorted runs |
-| Beap | O(m sqrt n) | one insertion per key |
-| Block-min directory | O(m) | one insertion per key |
-| Leftist heap | O(m + log n) | copy into the other pool, then splice |
-| Leftist arena | O(log n) | a splice of two right spines |
+| Heap | Cost | Proved | How |
+|------|------|:------:|-----|
+| Unsorted array | O(m) | yes | a copy and nothing to repair |
+| Binary heap | O(n + m) | yes | append then rebuild bottom-up |
+| d-ary heap | O(n + m) | yes | as the binary heap |
+| Weak heap | O(n + m) | yes | append then join each node to its ancestor |
+| Min-max heap | O(n + m) | yes | append then trickle down, bottom-up |
+| Interval heap | O(n + m) | yes | append, pair the slots, then both ends |
+| Sorted array | O(n + m) | yes | the merge of two sorted runs |
+| Beap | O(m sqrt n) | yes | one insertion per key |
+| Block-min directory | O(m) | yes | one insertion per key |
+| Leftist heap | O(m + log n) | partial | copy into the other pool, then splice |
+| Leftist arena | O(log n) | yes | a splice of two right spines |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
@@ -194,15 +194,17 @@ checks:
 
 ### Current status
 
-The catalogue is proved, `Meld` included, with one exception:
-`Heaps.Leftist.Meld` is not finished and is not here. It builds and passes the
-tests on the `leftist-meld` branch, but a `--level=4` run leaves nine checks
-unproved between the copy of one pool into another and the postcondition of the
-meld itself -- every one of them a prover timeout rather than a counterexample
--- so it stays on that branch until they are discharged.
+A `--level=4` run discharges 4 740 of 4 749 checks. The nine that remain are
+all in `Heaps.Leftist.Meld`: seven in the loop that copies one pool into
+another, one index check in it, and the meld's own model postcondition. Every
+one of them is a prover timeout rather than a counterexample, and the reason is
+recorded with the code -- the model of the pool on entry is reached for with
+'Old, which puts a copy of the pool into every obligation of that loop. A ghost
+parameter would carry it more cheaply, but a ghost formal is not something the
+language has.
 
-The tests and benchmarks on this branch already call it, so `bench.gpr` does
-not build here; the whole of `src/` proves.
+That is the one `partial` in the tables above. Everything else in `src/`
+proves, and `heaps_test` passes on the whole catalogue, meld included.
 
 ### Contracts
 
@@ -235,8 +237,9 @@ keys it had.
 Every implicit heap goes through at `--level=2`. The two leftist units, whose
 tree is a pool of linked nodes rather than an array index, need `--level=4` --
 `Heaps.Leftist` leaves seven checks unproved below it and the arena one; see
-[PROOF.md](PROOF.md) for what those proofs took and what carried them. The
-figures above are for everything but `Heaps.Leftist.Meld`; see the status note.
+[PROOF.md](PROOF.md) for what those proofs took and what carried them. Below
+`--level=4` the count for `Heaps.Leftist` is higher than the nine of the status
+note above, which are what `--level=4` itself leaves.
 
 ## Benchmarks
 
