@@ -638,3 +638,108 @@ need.
 When a structure's defining operation spans two containers, the containers are
 the wrong boundary. Put the storage where the operation is, and the proof
 follows the algorithm rather than fighting it.
+
+# The second arena
+
+Everything above was written about one explicit-tree unit. `Heaps.Skew` is the
+second, and it is the first chance to find out whether any of it was about
+leftist heaps in particular or about arenas in general. The answer is the point
+of this section, so it goes first: the skew heap needed **no new proof work at
+all**. It was written by taking the leftist unit, deleting the rank field, and
+replacing the conditional exchange of a node's two subtrees with an
+unconditional one. It proved at `--level=4` on the first attempt, and not one
+assertion was added, removed or moved.
+
+Both bodies carry the same 26 `Assert` and `Loop_Invariant` pragmas. The skew
+body is nine lines of code shorter and the spec ten, which is the rank field
+and nothing else: the field itself, the two clauses of the node invariant that
+maintained it, the accessor that read it, the two assignments that kept it up
+to date, and the branch that consulted it.
+
+## A weaker structure is not a harder proof
+
+This is worth stating plainly because the opposite is the intuition. A skew
+heap keeps a strictly weaker promise than a leftist heap -- its right spine is
+bounded only in amortized terms, so no single merge has a worst-case bound --
+and it is natural to expect a proof to get harder as the structure it describes
+gets looser.
+
+It gets easier, and the reason is what the contracts say. Not one of them
+mentions the shape of the tree. They speak of a multiset of keys, a size, a set
+of roots, and a free count; the deepest structural claim in the unit is that a
+node's cached model is its two children's plus its own key. The leftist
+condition never appears in a postcondition because no caller can observe it --
+it is a claim about *cost*, and cost is not what these contracts are for. So
+the clauses that maintain it are pure overhead as far as the proof is
+concerned, and removing them removes obligations without removing anything that
+another obligation depended on.
+
+The corollary is the useful part. In this collection an asymptotic guarantee is
+proved by construction and by measurement, not by contract: nothing in `src/`
+states a bound on any operation's running time. A structure whose invariant
+exists only to support such a bound therefore pays for it in every proof
+obligation touching that invariant and is repaid in none. That is a reason to
+expect the *pairing* heap and the *skew binomial* heap to be cheaper proofs
+than their bounded siblings too, and a reason to be suspicious of the reverse
+expectation.
+
+## What the flat invariant was worth
+
+The section *Keep the invariant flat* argued for a node-local invariant on the
+grounds that it keeps each obligation small. Porting the unit shows a second
+benefit that was not the reason for the choice: a flat invariant is
+*editable*. Every clause of `Node_In_Use` is about one node and its immediate
+neighbours, so deleting the two that mention the rank is a local edit with no
+consequences elsewhere -- nothing else in the predicate is stated in terms of
+them, and nothing in the body re-derives them.
+
+A recursive invariant would not have behaved that way. "This is a leftist tree"
+is a statement about a subtree, so weakening it to "this is a heap-ordered
+tree" changes the induction that every proof over the structure runs, and every
+obligation that unfolded the old definition has to be re-examined against the
+new one. The flat version has no induction to change.
+
+## Numbers
+
+154 checks against the leftist unit's 165. The eleven that are gone are the
+rank field's, and they are spread over the range check on the field, the two
+invariant clauses, and the obligations of the branch that read it.
+
+`--level=4` discharges all 154 in 30 seconds on this machine, from a clean
+session. `--level=2` leaves exactly one: the postcondition of `Merge`, reported
+as a prover timeout rather than as a missing argument. Measured the same way,
+the leftist arena leaves 1 of 165, and it is the same check in the same place
+-- its own `Merge` postcondition. That is why both arenas are proved at
+`--level=4` while the implicit heaps are content with `--level=2`.
+
+The section *What the arena added* reports that one check as the postcondition
+of `Clear`, which is where it landed when that section was written. It moved
+when `Clear`'s ghost arrays became aggregates, for the reason the section *An
+aggregate is a proof convenience and a run-time cost* gives; the count is
+unchanged and the level it needs is unchanged.
+
+"Cleaned properly" is not a throwaway. `heaps.gpr` sets `Proof_Dir`, so the
+why3 sessions live outside the object directory and `gnatprove --clean` does
+not remove them. A `--level=2` run after a `--level=4` run therefore replays
+the level-4 results and reports success at level 2 for checks level 2 cannot
+prove. The section *Proof level* above records the caching caveat; this is the
+sharper version of it, and it reported a false success twice before the proof
+directory was removed by hand.
+
+## What the pair is for
+
+Two units that differ in one design decision and agree in everything else are
+worth more than either alone, in two places outside the proof.
+
+`heaps_test` drives both arenas through the same tests. Because they present
+the same interface and claim the same contracts, the tests are written once as
+a generic and instantiated twice; the formal subprograms bind to each arena's
+operations directly, since a tree is a subtype of `Extended_Index` in both and
+a generic formal subprogram asks only for mode conformance. The two then serve
+as each other's oracle -- they build very different trees out of the same keys,
+so an agreeing wrong answer would have to be a coincidence reproduced exactly.
+
+And the benchmark can price the rank field, which is the one measurement in the
+collection with everything else held fixed. OBSERVATIONS.md has it: a quarter
+to a third faster wherever extraction dominates, and losing by up to a factor
+of 1.8 wherever insertion into a large tree does.

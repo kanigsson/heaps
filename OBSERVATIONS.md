@@ -21,9 +21,15 @@ Results at `n = 1_000_000`:
 | 8-ary | 8.25 | 124.40 | 69.96 | 5.07 | 27.49 |
 | 16-ary | 6.58 | 171.30 | 89.67 | 4.97 | 20.06 |
 | weak | 18.15 | 170.71 | 86.46 | 3.68 | 22.75 |
-| leftist | 105.58 | 619.97 | 320.15 | 166.11 | 9.96 |
+| leftist | 102.39 | 508.04 | 288.81 | 165.35 | 9.55 |
+| skew | 130.42 | 376.45 | 238.22 | 301.17 | 7.64 |
 | min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
 | interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
+
+The two arena rows are from the later run that added the skew heap, so that the
+pair can be compared against each other; the rest are as first measured. The
+binary heap was re-measured in both and reproduces within 5% on every column,
+which is what makes the two sets comparable at all.
 
 ### d-ary heaps
 
@@ -237,6 +243,90 @@ price of buying that ability: outside `insert-desc`, an explicit tree in a pool
 is between five and eighty-six times slower than the same tree implied by an
 array index.
 
+## Skew heap
+
+The skew heap is the leftist heap with the rank field removed and the
+conditional exchange of a node's two subtrees made unconditional. Nothing else
+differs -- same arena, same free chain, same cached model, same contracts, and
+a merge that is the same walk down the same two right spines -- so the pair
+prices one design decision with everything else held fixed. What the rank field
+buys is a worst-case bound: it holds a right spine to log2 (n + 1). What it
+costs is a field per node and a comparison per step.
+
+All figures below are from one run, and the leftist column is that run's:
+
+| n | scenario | `leftist` | `skew` | ratio |
+|---|----------|----------:|-------:|------:|
+| 1 000 000 | `fill` | 102.39 | 130.42 | 1.27 |
+| 1 000 000 | `drain` | 508.04 | 376.45 | 0.74 |
+| 1 000 000 | `churn` | 288.81 | 238.22 | 0.82 |
+| 1 000 000 | `replace-forward` | 115.14 | 77.29 | 0.67 |
+| 1 000 000 | `insert-asc` | 165.35 | 301.17 | 1.82 |
+| 1 000 000 | `insert-desc` | 9.55 | 7.64 | 0.80 |
+
+The table divides in two, and the line it divides on is which operation the
+workload spends its time in.
+
+Everything dominated by *extraction* is faster without the rank field: at
+`n = 1_000_000`, `drain` at 0.74, `churn` at 0.82 and `replace-forward` at
+0.67. The advantage holds at every size measured and is largest at the small
+end, where the pool still fits in cache and the saved comparison is the whole
+of the difference: `drain` runs 0.62 at `n = 1_000` and rises to 0.74 by a
+million. Two things pay for it and both are constants. A node is 16 bytes of
+links plus a 4-byte key against the leftist node's 20 plus 4, so the pool is a
+sixth smaller and a pointer walk takes a sixth fewer cache lines; and each step
+of a merge no longer reads two ranks, compares them and writes one back. Neither is an asymptotic gain, and
+the leftist section above is the reason they show up at all: what an explicit
+tree costs is the memory it walks over, so a structure that walks over less of
+it wins by more than the instruction count suggests.
+
+Everything dominated by *insertion into a large tree* is slower, and that is
+the rank field earning its keep. Insertion merges a one-node heap, so it walks
+the right spine of the accumulator from the top until the new key finds its
+place; the leftist condition is precisely the promise that this spine is short,
+and the skew heap does not make it. `insert-asc` is the adversarial order --
+every key is the new largest, so every insertion walks the whole spine -- and
+it is where the two diverge:
+
+| n | `leftist` | `skew` | ratio |
+|---|----------:|-------:|------:|
+| 1 000 | 74.44 | 49.68 | 0.67 |
+| 10 000 | 101.62 | 81.25 | 0.80 |
+| 100 000 | 132.98 | 133.33 | 1.00 |
+| 1 000 000 | 165.35 | 301.17 | 1.82 |
+
+That is the shape of an amortized bound losing to a worst-case one. Up to
+`n = 10_000` the cheaper node and the absent comparison win outright; at
+100 000 the two are level to the third digit; past that the spine the skew heap
+declines to bound is longer than the constant factors can pay for, and the gap
+widens with `n` rather than settling. The leftist column grows by 2.2 over three
+decades, which is a spine growing like log n; the skew column grows by 6.1.
+`fill` is the same effect on random input -- an insertion there walks until it
+meets a larger key rather than to the end, so the penalty is 1.27 instead of
+1.82, and it only appears above `n = 100_000`.
+
+The amortized bound does hold. `insert-asc` at `n = 1_000_000` is a million
+insertions in the worst order the structure has, and it completes in 301 ns
+each; if the spine were growing linearly this column would be minutes rather
+than 0.3 seconds. What the theory does not promise is any single merge, and
+this unit merges recursively, so the depth of the recursion is the length of a
+spine. Nothing here overflowed the default stack, `insert-asc` at a million
+keys included, but that is a measurement and not a guarantee -- an arena of
+this shape run at sizes well past this table, or on input chosen against it,
+wants an iterative merge or a stack sized for the arena.
+
+On `Meld` the two are the same structure doing the same thing.
+`meld-accumulate` at `n = 1_000_000` is 1 198.75 against 1 185.69, within one
+per cent, because the operands there are large and the spines of two large
+trees are what both walk. `meld-into-full` folds sixteen *one-key* heaps into a
+full accumulator, which is the insertion case again, and the skew heap pays the
+same way: 171.25 against 130.00. Both remain four orders of magnitude ahead of
+every heap that has to rebuild.
+
+The proof came out the same way round: the skew unit is 154 checks against the
+leftist unit's 165, and the eleven that are gone are the rank field's. See
+PROOF.md.
+
 ## Forward replacement
 
 `replace-forward` models queues whose priorities advance: it extracts the
@@ -357,8 +447,8 @@ Every entry in the catalogue has the operation. Five append and rebuild -- the
 binary heap, the three d-ary instances, the weak heap, the min-max heap and the
 interval heap; three insert the keys one at a time, because their insertion is
 cheap enough that this is the better algorithm -- the unsorted array, the
-block-min directory and the beap; the sorted array merges two runs; and the
-leftist heap splices.
+block-min directory and the beap; the sorted array merges two runs; and the two
+arenas splice.
 
 `leftist` is `Heaps.Leftist_Pool`, an instance of the arena. The catalogue used
 to carry a second unit holding the same tree in a pool of its own, and this
@@ -417,6 +507,10 @@ one-key heaps into it.
 | leftist | 10 000 | 152.50 | 103.75 |
 | leftist | 100 000 | 281.25 | 83.75 |
 | leftist | 1 000 000 | 1 439.38 | 127.50 |
+| skew | 1 000 | 47.50 | 53.13 |
+| skew | 10 000 | 115.63 | 78.13 |
+| skew | 100 000 | 246.25 | 103.75 |
+| skew | 1 000 000 | 1 198.75 | 171.25 |
 
 This table is from a later run than the main table above, re-measured in full
 when the remaining six melds were added so that every figure in it comes from
@@ -580,13 +674,16 @@ size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
 
 The meld scenarios are checksummed the same way, over a drain of the melded
-accumulator outside the timed phase, and all thirteen entries agree at every
+accumulator outside the timed phase, and all fourteen entries agree at every
 size. Between them these melds are a bottom-up rebuild at four different
 arities, a bottom-up build over distinguished ancestors, a two-level
 trickle-down, a paired double-ended build, a block copy, three runs of single
 insertions, a backwards merge of two sorted runs, a shifted copy of a node pool
 and a splice of two right spines. They have very little in common beyond the
 multiset they are supposed to produce, so the agreement is worth something. The
-arena is the useful one to have in that set: it is the only entry that never
-moves a key, so it shares no code path with any of the others beyond the key
-stream itself.
+arenas are the useful ones to have in that set: they are the only entries that
+never move a key, so they share no code path with any of the others beyond the
+key stream itself. The two of them agree with each other on every scenario and
+size as well, which is a check the pair gives for free -- they build very
+different trees out of the same keys, and a wrong answer from either would have
+to be a wrong answer that the other reproduced exactly.

@@ -13,6 +13,7 @@ Verified priority queues backed by arrays. No access types.
 | Interval heap | O(log n) | O(log n) min or max | yes | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | yes | Triangular layers, two parents per node |
 | Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a shared node arena |
+| Skew heap | O(log n)* | O(log n)* min | yes | As the leftist heap with no rank field; * amortized |
 | Block-min directory | O(1) | O(n / B + B) min | yes | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | yes | Baseline |
 | Sorted array | O(n) | O(1) min | yes | Baseline |
@@ -55,6 +56,23 @@ at `n = 1_000_000`. It is the arena that goes on, and it is the shape the other
 mergeable explicit-tree heaps below should take. See
 [OBSERVATIONS.md](OBSERVATIONS.md).
 
+The skew heap is the same tree with the bookkeeping removed. A merge walks the
+right spines of its two operands either way; the leftist heap then decides, at
+each node on the way back up, whether to exchange that node's two subtrees, and
+it keeps a rank per node to decide with. The skew heap exchanges them every
+time and asks nothing, which costs the worst-case bound -- a single merge can
+walk a spine of n nodes and only a *sequence* of operations is logarithmic --
+and saves a field per node, a comparison per step of every merge, and the one
+invariant clause that relates a node's two subtrees to one another. The two
+units are otherwise the same code and the same contracts, so the pair is the
+cleanest measurement in the collection of what a worst-case guarantee costs
+when nothing else differs. It divides cleanly: on every workload dominated by
+extraction the skew heap is 18 to 33 per cent faster at `n = 1_000_000`, and on
+the two dominated by insertion into a large tree it is slower -- 27 per cent on
+random fill and 82 per cent on ascending input -- because the right spine an
+insertion walks is the very thing the rank field is there to bound. See
+[OBSERVATIONS.md](OBSERVATIONS.md).
+
 The block-min directory occupies the point between the unsorted baseline and
 a tree. Keys remain unsorted, while a compact second array remembers the
 winner of each 256-key block. Insertion touches one entry; extraction scans the
@@ -95,6 +113,7 @@ rebuild across the whole set.
 | Beap | O(m sqrt n) | yes | one insertion per key |
 | Block-min directory | O(m) | yes | one insertion per key |
 | Leftist heap | O(log n) | yes | a splice of two right spines |
+| Skew heap | O(log n)* | yes | as the leftist heap, swapping unconditionally |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
@@ -160,7 +179,6 @@ rather than retrofitted onto the array-backed ones.
 
 ### Array-backed node pools
 
-- Skew heap
 - Binomial heap
 - Skew binomial heap
 - Pairing heap
@@ -200,7 +218,7 @@ checks:
 
 ### Current status
 
-A `--level=4` run discharges all 3 996 checks, which is every entry in the
+A `--level=4` run discharges all 4 150 checks, which is every entry in the
 tables above and every `Meld` in them. `heaps_test` passes on the whole
 catalogue.
 
@@ -225,17 +243,18 @@ gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 `heaps_test` checks results against a proved linear-scan oracle. It also checks
-extraction order and key preservation. The leftist heap is checked differently
+extraction order and key preservation. The two arenas are checked differently
 on two points, because with several trees in one array there is no range of
-slots holding a given tree's keys and so no scan to compare against: its oracle
-is kept by the test, and it additionally checks the arena's free count across
-every operation, and that a tree an operation did not name comes back with the
-keys it had.
+slots holding a given tree's keys and so no scan to compare against: their
+oracle is kept by the test, and it additionally checks an arena's free count
+across every operation, and that a tree an operation did not name comes back
+with the keys it had. Those checks are written once and run once per arena,
+since the two present the same interface and claim the same contracts.
 
-Every implicit heap goes through at `--level=2`. The leftist heap, whose tree
-is an arena of linked nodes rather than an array index, needs `--level=4`; it
-leaves one check unproved below that. See [PROOF.md](PROOF.md) for what those
-proofs took and what carried them.
+Every implicit heap goes through at `--level=2`. The two arenas, whose trees
+are linked nodes rather than array indices, need `--level=4`; each leaves one
+check unproved below that. See [PROOF.md](PROOF.md) for what those proofs took
+and what carried them.
 
 ## Benchmarks
 
