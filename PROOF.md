@@ -374,3 +374,214 @@ matching its key, and to have `Size` 1 when it has no children. With one heap
 per pool such a window is invisible; with a shared pool the invariant has to
 hold at every subprogram boundary because some other tree's operation may be
 next, so the window is exactly what the proof reports.
+
+# Melding the rest of the catalogue
+
+The sections above are about the two leftist units. The ones below were written
+afterwards, while filling in `Meld` for the six entries that did not have it:
+the weak, min-max and interval heaps, the beap, the sorted array and
+`Heaps.Leftist`. Four of the six needed nothing that was not already here. The
+other two each needed one idea, and both ideas are about the shape of a
+*precondition* rather than about the algorithm.
+
+## Relativize the sift; do not write a second one
+
+A meld on an implicit heap is an append and a bottom-up rebuild, so it needs a
+sift that can be called on a node whose ancestors are not yet in order. The
+binary heap already had one, because its ordering is local -- a node against
+its parent -- and `Ordered_Below (H, I)` says "every subtree rooted at I or
+later is a heap", which is exactly the invariant a bottom-up walk carries.
+
+The min-max and interval heaps do not, and for a stated reason: their invariant
+is domination of a *whole subtree*, because a min-max sift moves a key across
+two levels and justifying the move needs bounds that the local form only yields
+through the very constraint being repaired. The sift's precondition is then the
+full heap property minus one node's claims -- which a half-built array does not
+satisfy.
+
+The fix is not a second sift. It is one extra parameter:
+
+```ada
+   function Heap_Except_Below
+     (H : Heap; I : Extended_Index; N : Claim_Bound) return Boolean
+   is
+     (for all A in N .. H.Last =>
+        (for all D in 1 .. H.Last =>
+           (if Is_Ancestor (A, D) and then A /= I
+            then Ordered (Min_Level (A), H.Keys (A), H.Keys (D)))));
+```
+
+`N` is the lowest index whose claims are in force. An extraction sifts with
+`N = 1`, where the whole array claims its subtrees; a build sifts with
+`N = Start`, and walks `N` down from `H.Last + 1`, where nothing claims
+anything yet. `I = 0` suspends no claim at all, so `Heap_Except_Below (H, 0, 1)`
+*is* `Is_Heap (H)` and the two ends of a build step are the same predicate.
+
+What made this cheap is that the existing lemma bodies did not change. Each of
+them proves its conclusion for a pair `(A, D)` out of hypotheses at that same
+`A`, or at `A`'s own position in the descent -- never out of a hypothesis at
+some smaller index. Restricting both the hypothesis and the conclusion to
+`A >= N` is therefore sound clause by clause, and the edit is `for A in 1 ..`
+becoming `for A in N ..` in three loops and two loop invariants. The min-max
+heap went through on the first run after that change, meld and all.
+
+The obvious alternative -- keep the strong invariant and rebuild by repeated
+insertion -- would have been a five-line body and no proof work at all. It is
+also O(m log n) instead of O(n + m), which is the comparison the whole meld
+column exists to make, so it was not on offer.
+
+## Make the bound a subtype, not a Natural
+
+`N` above ranges over `1 .. Max_Capacity + 1`: one past the largest index, so
+that a build can start from "no claim at all". Declaring it `Extended_Index`,
+which starts at 0, cost three unprovable range checks -- `for A in N .. H.Last`
+then admits `A = 0`, and `Is_Ancestor (A, D)` wants an `Index`. A named subtype
+with the right lower bound removes them without a single assertion:
+
+```ada
+   subtype Claim_Bound is Positive range 1 .. Max_Capacity + 1;
+```
+
+Small, but it is the second time in this file that the fix for a cluster of
+failed checks was a type rather than a proof.
+
+## Two bounds, when the two halves are placed one after the other
+
+The interval heap needs the same treatment twice over, and not with the same
+value. Its invariant has two independent halves -- the low ends nest, and the
+high ends nest -- and sifting one half requires the *other* half to be in
+order, because a key coming down can land in the far end of a child and has to
+be shown to still fit under everything above.
+
+A bottom-up build places the low end of a node while the high end of that same
+node is still unplaced. So the sift takes two bounds:
+
+```ada
+   procedure Sift_Down
+     (H : in out Heap; Start : Index; Min_Side : Boolean;
+      N : Claim_Bound := 1; NO : Claim_Bound := 1)
+```
+
+and the build calls it as `Sift_Down (H, M, True, M, M + 1)` -- the side being
+sifted claims from `M` on, the side that is not claims only from `M + 1` on --
+and then `Sift_Down (H, M, False, M, M)`, the high end sifted against a low
+side that is now in order.
+
+One hypothesis of the step lemma had to be weakened for that to hold. It said
+that the far end of the child is no better than the end of the parent that did
+not move, which is a fact about the other half's nesting at the node being
+sifted -- exactly the claim the first call does not have. What is true instead
+is a disjunction:
+
+```ada
+   After.Keys  (Slot (L, not Min_Side, C))
+   = Before.Keys (Slot (L, not Min_Side, C))
+   or else Ordered (not Min_Side,
+                    Before.Keys (Slot (L, not Min_Side, I)),
+                    After.Keys  (Slot (L, not Min_Side, C)))
+```
+
+Either the child's far end did not move, and the nodes above it bound it as
+they did before; or it took the key that came down, which the parent bounded.
+Splitting the lemma's case analysis along that disjunction is the whole change,
+and it is one that would have been invisible without the build: for a sift that
+starts at the root with both bounds at 1, the first disjunct is never needed.
+
+## A merge needs a range model, and it needs to run backwards
+
+The sorted array is the only entry whose meld is a merge of two runs, and the
+note in README.md predicted what it would cost: the multiset model of this
+collection is `Occurrences (A, Lst)`, a scan of an array *prefix*, and halfway
+through a merge the array has live keys in two regions with a hole between
+them. `Heaps.Models` gained a range model and four lemmas:
+
+- `Occurrences_In (A, Fst, Lst)`, the model of a range;
+- `Lemma_Range_Is_Prefix`, which ties it back to `Occurrences`;
+- `Lemma_Range_Same`, the frame;
+- `Lemma_Range_Peel`, which takes a range apart at its *low* end -- the one the
+  prefix model has no analogue of, and the one every step of the merge needs,
+  because the merged region grows downwards;
+- `Lemma_Range_Split`, which turns the two regions back into the prefix the
+  postcondition speaks.
+
+Plus three multiset laws that had not come up before: `Sum` is symmetric, `Sum`
+has a left identity, and an `Add` comes out of the *left* operand of a `Sum` as
+well as the right. All three are `is null`.
+
+Running the merge backwards -- taking the smaller of the two remaining minima
+and writing it at the far end of what is left to fill, working towards the
+front -- is
+what keeps the array to two live regions rather than three. The output slot is
+always `I + J`, which is above the part of `Into`'s own run still to be read,
+so no key is ever copied out of the way and the "already consumed, not yet
+overwritten" region of the prediction never exists. That is an algorithm choice
+made for the proof, and it is also the faster of the two directions.
+
+The model step itself is one `Add` travelling out of a three-way sum, and it is
+worth recording how literally the proof has to be spelled. `A + B + C` is
+`Sum (Sum (A, B), C)`, multiset equality is extensional rather than structural,
+and so *every* rewrite under a `Sum` needs its own congruence call. The step
+that worked is nine lemma calls and five assertions for what is, informally,
+"one key moved from one bag to another". The pattern that found the gaps was to
+assert the goal in each branch of the `if` rather than after it: an assertion
+that fails inside one branch says which of the two cases is missing a lemma,
+where the same assertion after the branch says only that something is.
+
+## What did not need anything
+
+Three of the six were routine, and it is worth saying which and why.
+
+The **weak heap**'s ordering is local again -- a node against its distinguished
+ancestor -- so its build carries the same shape of invariant the binary heap's
+does, and the single exchange lemma the insertion already had is exactly the
+step of the build. The whole meld is an append, a downward walk, and two
+assertions naming which node answers to which ancestor after a join.
+
+The **beap** does not rebuild at all. Its insertion is O(sqrt n) and a
+bottom-up rebuild of a beap is O(n ** 1.5), so inserting the keys one at a time
+is the better algorithm as well as the shorter proof: a loop around `Insert`,
+four lemma calls for the model, and it went through on the first run.
+
+`Heaps.Leftist`'s meld is a copy of one pool into another and then the merge it
+already had. Every clause of `Well_Linked` is about a node and its immediate
+neighbours -- the first lesson in this file -- so a copied node satisfies it
+exactly because the original did, with each index shifted by the number of
+slots already in use. There is no new invariant; there is only a lot of
+instantiating.
+
+## Split the subprogram when its two halves stop talking to each other
+
+That last one is where the remaining time went, and the lesson is about proof
+engineering rather than about heaps.
+
+The copy and the merge share nothing. The copy is a claim about every slot in
+the pool; the merge is a claim about two roots. Written as one procedure, every
+verification condition in the copy carried the merge's context and every one in
+the merge carried the copy's, and the effect was not linear: assertions that
+had been discharged in a second started timing out, and adding a *ghost
+snapshot of the key array* -- inert code, erased at run time -- was enough on
+its own to push four checks that had passed back into failure.
+
+Splitting the copy out into a `Graft` procedure with a contract of its own
+fixed it. The contract is the interface between the two halves and is worth
+reading as a summary of what a meld on a private pool actually is:
+
+```ada
+   procedure Graft
+     (Into : in out Heap; From : Heap; B_Root : out Extended_Index)
+     with Post => Well_Linked (Into)
+                  and then Size_Of (Into, Into.Root)
+                           + Size_Of (Into, B_Root) = Into.Count
+                  and then (for all X in 1 .. Into.Count =>
+                              (if Into.Links (X).Parent = 0
+                               then X = Into.Root or else X = B_Root))
+                  and then Model (Into) = Model (Into)'Old + Model (From);
+```
+
+"The pool holds a forest of exactly two trees, and here are their roots." That
+is precisely `Merge`'s precondition, which was written for the merge inside
+`Extract_Min` and needed no change. `Meld` is then four statements.
+
+The general rule this is a case of: a large proof obligation is not the sum of
+its parts, so the cheapest thing to try when assertions that used to pass stop
+passing is not another assertion but a subprogram boundary.

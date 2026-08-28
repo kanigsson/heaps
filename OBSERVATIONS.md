@@ -227,8 +227,8 @@ the binary heap.
 None of this is an argument against the structure, because *this table* cannot
 measure the thing it is for. A leftist heap melds two heaps of any size in
 O(log n); every implicit heap in this collection has to rebuild, at O(n). That
-column is the Meld section below, where the shared-pool form of the same tree
-beats the binary heap by three to four orders of magnitude. What this table
+column is the Meld section below, where both forms of the same tree beat the
+binary heap by four orders of magnitude on the workload the structure is for. What this table
 shows is the price of buying that ability: outside `insert-desc`, an explicit
 tree in a pool is between four and eighty-six times slower than the same tree
 implied by an array index.
@@ -349,16 +349,17 @@ extraction.
 
 ## Meld
 
-Seven entries have the operation so far: the binary heap and the three d-ary
-instances, which append and rebuild; the unsorted array, which appends and
-repairs nothing; the block-min directory, which inserts the keys one at a time
-because its insertion is already O(1); and `leftist-arena`, the only one that
-splices. See the Planned operations section of README.md for the rest.
+Every entry in the catalogue has the operation. Five append and rebuild -- the
+binary heap, the three d-ary instances, the weak heap, the min-max heap and the
+interval heap; three insert the keys one at a time, because their insertion is
+cheap enough that this is the better algorithm -- the unsorted array, the
+block-min directory and the beap; the sorted array merges two runs; and the two
+leftist units splice, one of them after a copy.
 
-`leftist-arena` is `Heaps.Leftist_Pool`, not `Heaps.Leftist`. The two hold the
-same tree and differ in who owns the pool, and a meld is the O(log n) the
-structure exists for only when both operands are already nodes of one pool; the
-`leftist` row of the main table is the other unit, which has no meld.
+`leftist` is `Heaps.Leftist`, whose `Heap` object owns its pool, and
+`leftist-arena` is `Heaps.Leftist_Pool`, an instance of the shared-pool unit.
+They hold the same tree and differ only in who owns the pool, which is exactly
+what this column was built to price.
 
 A single meld is too fast to time against the cost of building its operands, so
 both scenarios meld sixteen heaps into one accumulator and time the sixteen
@@ -370,36 +371,57 @@ one-key heaps into it.
 
 | heap | n | `meld-accumulate` | `meld-into-full` |
 |------|--:|------------------:|-----------------:|
-| binary | 1 000 | 1 241.94 | 1 017.50 |
-| binary | 10 000 | 17 080.25 | 13 871.44 |
-| binary | 100 000 | 185 510.62 | 180 870.00 |
-| binary | 1 000 000 | 1 567 067.20 | 1 944 692.32 |
-| 4-ary | 1 000 | 1 021.25 | 1 119.38 |
-| 4-ary | 10 000 | 9 998.94 | 10 900.13 |
-| 4-ary | 100 000 | 107 829.56 | 113 790.31 |
-| 4-ary | 1 000 000 | 1 077 061.60 | 1 172 777.28 |
-| 8-ary | 1 000 | 769.38 | 1 780.06 |
-| 8-ary | 10 000 | 7 425.69 | 15 554.00 |
-| 8-ary | 100 000 | 75 832.94 | 167 909.82 |
-| 8-ary | 1 000 000 | 1 037 146.08 | 1 594 538.08 |
-| 16-ary | 1 000 | 1 056.25 | 1 746.25 |
-| 16-ary | 10 000 | 10 497.00 | 17 102.13 |
-| 16-ary | 100 000 | 109 167.75 | 175 769.24 |
-| 16-ary | 1 000 000 | 1 128 508.00 | 1 491 448.00 |
-| block-min | 1 000 | 153.75 | 8.13 |
-| block-min | 10 000 | 1 515.06 | 35.63 |
-| block-min | 100 000 | 15 231.50 | 31.88 |
-| unsorted | 1 000 | 61.25 | 7.50 |
-| unsorted | 10 000 | 981.31 | 8.13 |
-| leftist-arena | 1 000 | 165.00 | 96.88 |
-| leftist-arena | 10 000 | 248.12 | 156.25 |
-| leftist-arena | 100 000 | 3 017.56 | 142.50 |
-| leftist-arena | 1 000 000 | 4 308.81 | 202.50 |
+| binary | 1 000 | 970.00 | 956.88 |
+| binary | 10 000 | 13 549.56 | 12 842.69 |
+| binary | 100 000 | 143 946.38 | 161 752.88 |
+| binary | 1 000 000 | 1 392 644.32 | 1 641 240.96 |
+| 4-ary | 1 000 | 742.50 | 1 082.50 |
+| 4-ary | 10 000 | 8 062.56 | 10 498.31 |
+| 4-ary | 100 000 | 73 352.31 | 104 929.56 |
+| 4-ary | 1 000 000 | 719 375.04 | 1 093 493.28 |
+| 8-ary | 1 000 | 716.31 | 1 131.25 |
+| 8-ary | 10 000 | 6 882.00 | 11 172.00 |
+| 8-ary | 100 000 | 70 309.69 | 118 977.88 |
+| 8-ary | 1 000 000 | 751 359.84 | 1 258 669.36 |
+| 16-ary | 1 000 | 788.75 | 1 337.50 |
+| 16-ary | 10 000 | 7 710.75 | 13 095.81 |
+| 16-ary | 100 000 | 75 912.31 | 130 571.20 |
+| 16-ary | 1 000 000 | 760 984.32 | 1 314 302.64 |
+| weak | 1 000 | 2 844.38 | 3 547.50 |
+| weak | 10 000 | 38 361.19 | 67 444.69 |
+| weak | 100 000 | 400 143.08 | 746 236.08 |
+| weak | 1 000 000 | 3 952 742.08 | 7 343 960.32 |
+| min-max | 1 000 | 4 915.06 | 7 944.50 |
+| min-max | 10 000 | 58 031.44 | 115 096.62 |
+| min-max | 100 000 | 584 549.36 | 1 075 603.12 |
+| min-max | 1 000 000 | 5 835 120.00 | 10 539 224.96 |
+| interval | 1 000 | 2 328.75 | 3 492.56 |
+| interval | 10 000 | 23 182.81 | 33 804.19 |
+| interval | 100 000 | 225 052.50 | 345 356.68 |
+| interval | 1 000 000 | 2 240 038.72 | 3 435 181.12 |
+| block-min | 1 000 | 148.13 | 5.00 |
+| block-min | 10 000 | 1 466.25 | 5.63 |
+| block-min | 100 000 | 14 754.00 | 6.25 |
+| beap | 1 000 | 2 323.13 | 85.00 |
+| beap | 10 000 | 44 623.75 | 73.13 |
+| beap | 100 000 | 1 072 223.60 | 377.50 |
+| unsorted | 1 000 | 50.00 | 3.75 |
+| unsorted | 10 000 | 461.88 | 3.13 |
+| sorted | 1 000 | 776.88 | 465.63 |
+| sorted | 10 000 | 9 917.63 | 5 166.94 |
+| leftist | 1 000 | 499.38 | 76.25 |
+| leftist | 10 000 | 4 526.94 | 120.00 |
+| leftist | 100 000 | 43 408.13 | 95.63 |
+| leftist | 1 000 000 | 436 532.32 | 131.25 |
+| leftist-arena | 1 000 | 107.50 | 66.25 |
+| leftist-arena | 10 000 | 159.38 | 107.50 |
+| leftist-arena | 100 000 | 295.63 | 89.38 |
+| leftist-arena | 1 000 000 | 1 704.44 | 134.38 |
 
 This table is from a later run than the main table above, re-measured in full
-when `leftist-arena` was added so that every figure in it comes from one run.
-The machine and the switches are the same, and the main-table figures
-spot-checked against that run reproduced within 8%.
+when the remaining six melds were added so that every figure in it comes from
+one run. The machine and the switches are the same, and the entries that were
+already there reproduce their earlier figures within about 15%.
 
 The single- and double-digit entries deserve a caveat the rest do not. A
 measurement here is sixteen melds, so at those magnitudes the figure is a few
@@ -412,110 +434,139 @@ second digit.
 Every rebuilding heap spends about the same time on the two scenarios, and that
 is the finding. `meld-accumulate` melds operands of `n / 16` keys;
 `meld-into-full` melds operands of *one* key. At `n = 1_000_000` the work
-differs by a factor of sixty thousand and the time does not differ at all --
-`meld-into-full` is the *slower* of the two there, by between 9% (`4-ary`) and
-54% (`8-ary`), with the binary heap at 24%. An implicit heap cannot splice, so
-it appends and rebuilds, and the rebuild is over the accumulator. What arrives
-is irrelevant; what is already there is what gets paid for. The reason
-`meld-into-full` is worse rather than merely equal is that its accumulator is
-the full `n` from the first meld onwards, while `meld-accumulate` grows into
-it. That margin is what makes the binary heap the exception at the three
-smaller sizes, where it is the faster of the two: sixteen rebuilds of an
-accumulator growing to `n` and sixteen of one already at `n` are close enough
-that the ordering is set by cache behaviour rather than by the count of sifts.
-The three d-ary instances are slower on `meld-into-full` at every size.
+differs by a factor of sixty thousand and the time differs by less than a
+factor of two, in favour of the scenario with the *larger* operands. An
+implicit heap cannot splice, so it appends and rebuilds, and the rebuild is
+over the accumulator. What arrives is irrelevant; what is already there is what
+gets paid for.
 
-The unsorted array is the other side of it. Appending one key to a
-million-key array is a store, so `meld-into-full` is a few nanoseconds and does
-not grow -- 7.50 at `n = 1_000` and 8.13 at `n = 10_000`, and it would be the
-same at `n = 1_000_000`. Against the binary heap's 1.94 million nanoseconds per
-meld at that size this is a factor of a quarter of a million, and none of it is
-constant factor: it is O(1) against O(n).
+The ratio between the two columns has a predicted value. `meld-accumulate`
+rebuilds arrays of `n / 16`, `2n / 16`, ... `n`, which is 8.5 `n` of array
+altogether; `meld-into-full` rebuilds `n` sixteen times over. A rebuild whose
+cost is linear in the accumulator should therefore show `meld-into-full` at
+1.88 times `meld-accumulate`. The three heaps added last are close to it at
+`n = 1_000_000` -- 1.86 for the weak heap, 1.81 for the min-max heap, 1.53 for
+the interval heap -- and the binary and d-ary heaps fall well short, at 1.18
+and 1.5 to 1.7. The heaps whose rebuild does the most work per node are the
+ones that behave like their own cost model; the cheaper ones spend enough of
+their time on memory traffic that the two scenarios share to blur it.
 
-### The block-min directory is the interesting one
+### What a rebuild costs is what the rebuild does
 
-The unsorted array's flat meld comes at the price of a linear `Extract_Min`, so
-it wins this column and loses every other one. The block-min directory does not
-make that trade. Its meld does not grow either -- 8.13, 35.63 and 31.88 ns over
-three decades of `n`, which is noise around a constant rather than a trend --
-because its insertion is a store and at most one directory entry, so melding is
-O(m) with no repair. But its extraction is O(n / B + B) rather than O(n), which
-is 15 231 ns/meld on `meld-accumulate` at `n = 100_000` against the binary
-heap's 185 511.
+The four rebuilding shapes separate cleanly, and the order is the order of how
+much a single sift touches. At `n = 1_000_000` on `meld-accumulate`, against
+the binary heap's 1 392 644:
 
-That makes it the first structure here with a flat meld *and* a sub-linear
-extraction, which is much closer to a mergeable heap's profile than the
-unsorted baseline is. It gets there by a different route -- keeping the keys
-unsorted and paying at extraction, rather than keeping a tree and paying at the
-merge -- but for a workload that melds far more often than it extracts, it is
-the entry to beat rather than the binary heap.
+- the **interval heap** is 2 240 039, 1.6 times. It pays one pass to make every
+  pair of slots a well-formed interval, then sifts both ends of every node --
+  two sifts per node against the binary heap's one -- but each sift compares
+  against children only, one level at a time.
+- the **weak heap** is 3 952 742, 2.8 times. Its build is one comparison per
+  node, which is *half* the binary heap's, and it is still slower: what it
+  spends instead is the climb that finds each node's distinguished ancestor,
+  and the flip bit that a join has to write. Fewer comparisons, more pointer
+  chasing.
+- the **min-max heap** is 5 835 120, 4.2 times, and it is the slowest thing in
+  the column. A trickle-down there examines children *and* grandchildren -- up
+  to six keys to choose one -- and moves two levels at a time, so it touches
+  three times the array per level descended.
 
-That is the shape a mergeable heap shows, which is what made the degenerate
-baseline worth having in this column before the real thing arrived. It has
-arrived, and it landed where the prediction put it.
+The d-ary instances go the other way and beat the binary heap: 719 375 for
+`4-ary` against 1 392 644. A bottom-up rebuild sifts once per *internal* node,
+and a d-ary heap has `n / d` of them against the binary heap's `n / 2`. The
+child scan that makes arity expensive for extraction is paid on far fewer nodes
+here. It does not go on reversing -- `8-ary` and `16-ary` are level with
+`4-ary` or slightly behind -- because the scan eventually outweighs having
+fewer nodes to scan from.
 
-### The leftist arena, which is what the column was for
+The main table has higher arity costing *more*: `16-ary` pays 76.96 ns/op on
+`replace-forward` against the binary heap's 27.44. Meld reverses it, for
+exactly that reason.
 
-`meld-into-full` is the case the structure is built for, and there it is flat:
-96.88 ns at `n = 1_000` and 202.50 at `n = 1_000_000`. Three decades of `n`
-cost a factor of two, which is what O(log n) looks like on a log scale of
-sizes. Against the binary heap's 1 944 692 at the same size that is a factor of
-nine thousand six hundred, and against the 4-ary heap's 1 172 777 a factor of
-five thousand eight hundred.
+### The block-min directory and the beap: when insertion is the better meld
 
-The prediction in the previous section was that it would sit between the
-implicit heaps and the unsorted array, and it does, on both sides:
+Two entries do not rebuild at all, because their insertion is cheap enough that
+inserting the keys one at a time is the better algorithm. They are the two ends
+of how well that works.
 
-- against the O(1)-append structures it *loses* `meld-into-full`, 202.50
-  against single- and double-digit figures for the unsorted array and the
-  block-min directory. That is O(log n) against O(1) for a one-key operand, and
-  it is the price of holding a tree.
-- against those same two it *wins* `meld-accumulate`, where the operands are
-  large: 3 017.56 at `n = 100_000` against block-min's 15 231.50, and 248.12 at
-  `n = 10_000` against the unsorted array's 981.31. Their O(m) becomes visible
-  as soon as `m` stops being one, and the arena's O(log n) does not.
+The block-min directory's meld does not grow at all on `meld-into-full` -- 5.00,
+5.63, 6.25 over three decades of `n` -- because its insertion is a store and at
+most one directory entry. It is O(m) with no repair, and its extraction is
+O(n / B + B) rather than the unsorted array's O(n), which makes it the one
+structure here with a flat meld *and* a sub-linear extraction. The unsorted
+array gets the same flat meld only by paying a linear extraction for it.
 
-So it is the only entry that is never worse than linear in either operand, and
-the two baselines beat it only in the one case where a meld is a single store.
+The beap is the interesting case, because its meld is the only figure in this
+table that grows *faster* than linearly: 2 323, 44 624, 1 072 224 over three
+decades, which is between a factor of 19 and a factor of 24 per decade against
+the 10 a linear cost would give and the 31.6 of `n ** 1.5`. That is `m sqrt(n)`
+with `m = n / 16`. It is still the right algorithm, and that is the point: a
+bottom-up rebuild of a beap is *also* super-linear -- a node in layer L sifts
+through the sqrt(n) - L layers below it, which sums to about 0.47 `n ** 1.5`
+against repeated insertion's 0.088 -- so the structure that cannot rebuild
+linearly is exactly the one for which the naive meld is best. `meld-into-full`
+confirms it from the other side: 85.00, 73.13, 377.50, which is one O(sqrt n)
+insertion and no rebuild at all.
 
-`meld-accumulate` is worth a second look, because it is *not* flat: 165.00,
-248.12, 3 017.56, 4 308.81. That is not the algorithm. The operands grow with
-`n`, so the two right spines the merge walks grow from about six nodes to about
-sixteen -- a factor under three, against the factor of twenty-six measured. The
-rest is the pool. A node is 24 bytes, so the live nodes are 240 KB at
-`n = 10_000` and 24 MB at `n = 1_000_000`, and the jump in the table -- between
-`n = 10_000` and `n = 100_000`, a factor of twelve for a factor of ten in `n`
--- is where the arena stops fitting in cache. A merge is a pointer walk, and
+### The sorted array merges, and a merge is a scan
+
+The sorted array is the only entry whose meld is neither an append nor a
+splice. Both its columns are linear in `n` and neither is flat, because a merge
+of two runs rewrites the whole array however small the second run is: 465.63 to
+5 166.94 on `meld-into-full` for a *one-key* operand.
+
+What it buys for that is the best constant in the table. 5 166.94 ns to merge a
+ten-thousand-key run is 0.5 ns per key, and the binary heap's rebuild of the
+same array costs 12 842.69 -- two and a half times more for an operation with
+the same asymptotic cost. A merge run backwards is two sequential reads and one
+sequential write, which is the friendliest memory pattern here; a bottom-up
+rebuild jumps between a node and its children.
+
+### The two leftist units, which is what the column was for
+
+`Heaps.Leftist` and `Heaps.Leftist_Arena` hold the same tree. The first owns
+its pool, so a meld has to copy `From`'s nodes into the free slots at the end
+of `Into`'s pool, shifting every index, before the splice; the second shares
+one pool, so the splice is the whole operation. The two columns price that copy
+exactly.
+
+On `meld-into-full` the copy is one node, and the two are indistinguishable:
+76.25, 120.00, 95.63, 131.25 for the private pool against 66.25, 107.50, 89.38,
+134.38 for the arena. Both are flat in `n` -- three decades cost a factor under
+two, which is what O(log n) looks like on a log scale of sizes -- and against
+the binary heap's 1 641 241 at `n = 1_000_000` that is a factor of twelve
+thousand. **The private pool costs nothing at all when the operand is small**,
+which was not obvious before the measurement and is the more useful half of the
+result: the API concession the arena demands buys nothing on this workload.
+
+On `meld-accumulate` the copy is the whole operation: 436 532 against the
+arena's 1 704 at `n = 1_000_000`, a factor of 256, and the private pool's
+figure grows linearly in `n` -- 499, 4 527, 43 408, 436 532, a clean factor of
+ten per decade -- while the arena's does not. That is O(m) against O(log n) laid
+out over four decades.
+
+Even so, the copying unit beats every rebuilding heap on that scenario too:
+436 532 against the binary heap's 1 392 644 and the min-max heap's 5 835 120.
+Copying `n / 16` nodes is less work than rebuilding `n` of them, so a leftist
+heap that has to copy is still ahead of an implicit heap that has to rebuild --
+by a factor of three against the best of them and thirteen against the worst.
+The arena is a further factor of 256 beyond that.
+
+`meld-accumulate` on the arena is worth a second look, because it is *not*
+flat: 107.50, 159.38, 295.63, 1 704.44. That is not the algorithm. The operands
+grow with `n`, so the two right spines the merge walks grow from about six
+nodes to about sixteen -- a factor under three, against the factor of sixteen
+measured. The rest is the pool. A node is 24 bytes, so the live nodes are 240 KB
+at `n = 10_000` and 24 MB at `n = 1_000_000`, and the jump between the last two
+rows is where the arena stops fitting in cache. A merge is a pointer walk, and
 the main table's `leftist` row reports the same effect on the same structure:
 what an explicit tree costs is not the instruction count but the memory it
 walks over.
 
-The one thing the table cannot show is that a meld here moves nothing. The
-arena's free count is unchanged across a meld -- no node is allocated, freed or
-copied, the operation is a splice of two spines and nothing else -- which is
-checked at run time in `heaps_test` rather than timed here.
-
-### Arity reverses
-
-The main table has higher arity costing more: extraction scans all `d` children
-at every level, and `16-ary` pays 76.96 ns/op on `replace-forward` against the
-binary heap's 27.44 in the main table. Meld reverses it. Every d-ary instance
-melds faster than the binary heap on `meld-accumulate` at `n = 1_000_000`:
-1 037 146 ns for `8-ary` and 1 077 062 for `4-ary` against 1 567 067 for
-`binary`, a third off.
-
-The reason is that a bottom-up rebuild sifts once per *internal* node, and a
-d-ary heap has `n / d` of them against the binary heap's `n / 2`. Fewer sifts,
-each over a tree of depth `log_d n` rather than `log_2 n`. Both effects favour
-higher arity, and the child scan that makes arity expensive for extraction is
-paid on far fewer nodes here.
-
-It does not go on reversing: `4-ary` and `8-ary` are close, and `16-ary` is
-slower than both, because the scan of sixteen children eventually outweighs
-having a sixteenth as many nodes to scan from. The optimum for this workload is
-somewhere around eight, which is roughly where the main table's `fill` column
-puts it too -- filling and rebuilding are the two operations here whose cost is
-dominated by sift-downs that mostly terminate early.
+The one thing the table cannot show is that a meld in the arena moves nothing.
+The arena's free count is unchanged across a meld -- no node is allocated,
+freed or copied, the operation is a splice of two spines and nothing else --
+which is checked at run time in `heaps_test` rather than timed here.
 
 ## Checksums
 
@@ -524,10 +575,13 @@ size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
 
 The meld scenarios are checksummed the same way, over a drain of the melded
-accumulator outside the timed phase, and all seven entries agree at every size.
-Implementations whose melds are a bottom-up rebuild at four different arities,
-a block copy, a run of single insertions and a splice of two right spines have
-very little in common beyond the multiset they are supposed to produce, so the
-agreement is worth something. The arena is the useful one to have in that set:
-it is the only entry that never moves a key, so it shares no code path with any
-of the others beyond the key stream itself.
+accumulator outside the timed phase, and all thirteen entries agree at every
+size. Between them these melds are a bottom-up rebuild at four different
+arities, a bottom-up build over distinguished ancestors, a two-level
+trickle-down, a paired double-ended build, a block copy, three runs of single
+insertions, a backwards merge of two sorted runs, a shifted copy of a node pool
+and a splice of two right spines. They have very little in common beyond the
+multiset they are supposed to produce, so the agreement is worth something. The
+arena is the useful one to have in that set: it is the only entry that never
+moves a key, so it shares no code path with any of the others beyond the key
+stream itself.

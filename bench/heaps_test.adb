@@ -504,11 +504,11 @@ procedure Heaps_Test is
       Check (Sum = Back, "interval: nothing lost on the way");
    end Test_Interval;
 
-   --  Meld: the two implementations that have the operation so far are
-   --  checked against each other and against a sorted oracle built from the
-   --  same keys. Sizes are swept in both directions so that the lopsided
-   --  cases -- a large heap receiving a tiny one and the reverse -- are
-   --  covered as well as the balanced one.
+   --  Meld: every implementation that has the operation is checked against
+   --  the others and against a sorted oracle built from the same keys. Sizes
+   --  are swept in both directions so that the lopsided cases -- a large heap
+   --  receiving a tiny one and the reverse -- are covered as well as the
+   --  balanced one.
 
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
@@ -528,6 +528,18 @@ procedure Heaps_Test is
         (Capacity           => Extended_Index (Total),
          Directory_Capacity =>
            Heaps.Block_Min.Blocks_For (Extended_Index (Total)));
+      W_Into : Heaps.Weak.Heap (Extended_Index (Total));
+      W_From : Heaps.Weak.Heap (Extended_Index (Total));
+      M_Into : Heaps.Min_Max.Heap (Extended_Index (Total));
+      M_From : Heaps.Min_Max.Heap (Extended_Index (Total));
+      V_Into : Heaps.Interval.Heap (Extended_Index (Total));
+      V_From : Heaps.Interval.Heap (Extended_Index (Total));
+      P_Into : Heaps.Beap.Heap (Extended_Index (Total));
+      P_From : Heaps.Beap.Heap (Extended_Index (Total));
+      S_Into : Heaps.Sorted.Heap (Extended_Index (Total));
+      S_From : Heaps.Sorted.Heap (Extended_Index (Total));
+      L_Into : Heaps.Leftist.Heap (Extended_Index (Total));
+      L_From : Heaps.Leftist.Heap (Extended_Index (Total));
 
       Oracle : array (1 .. Total) of Key_Type;
       Filled : Natural := 0;
@@ -538,6 +550,12 @@ procedure Heaps_Test is
       B_Key : Key_Type;
       D_Key : Key_Type;
       C_Key : Key_Type;
+      W_Key : Key_Type;
+      M_Key : Key_Type;
+      V_Key : Key_Type;
+      P_Key : Key_Type;
+      S_Key : Key_Type;
+      L_Key : Key_Type;
       Prev  : Key_Type := Key_Type'First;
 
       procedure Feed (Count : Natural; Into_Target : Boolean);
@@ -555,11 +573,23 @@ procedure Heaps_Test is
                Heaps.Binary.Insert (B_Into, K);
                Heaps.Dary.Insert (D_Into, K);
                Heaps.Block_Min.Insert (C_Into, K);
+               Heaps.Weak.Insert (W_Into, K);
+               Heaps.Min_Max.Insert (M_Into, K);
+               Heaps.Interval.Insert (V_Into, K);
+               Heaps.Beap.Insert (P_Into, K);
+               Heaps.Sorted.Insert (S_Into, K);
+               Heaps.Leftist.Insert (L_Into, K);
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
                Heaps.Dary.Insert (D_From, K);
                Heaps.Block_Min.Insert (C_From, K);
+               Heaps.Weak.Insert (W_From, K);
+               Heaps.Min_Max.Insert (M_From, K);
+               Heaps.Interval.Insert (V_From, K);
+               Heaps.Beap.Insert (P_From, K);
+               Heaps.Sorted.Insert (S_From, K);
+               Heaps.Leftist.Insert (L_From, K);
             end if;
          end loop;
       end Feed;
@@ -571,6 +601,12 @@ procedure Heaps_Test is
       Heaps.Binary.Meld (B_Into, B_From);
       Heaps.Dary.Meld (D_Into, D_From);
       Heaps.Block_Min.Meld (C_Into, C_From);
+      Heaps.Weak.Meld (W_Into, W_From);
+      Heaps.Min_Max.Meld (M_Into, M_From);
+      Heaps.Interval.Meld (V_Into, V_From);
+      Heaps.Beap.Meld (P_Into, P_From);
+      Heaps.Sorted.Meld (S_Into, S_From);
+      Heaps.Leftist.Meld (L_Into, L_From);
 
       Check (Heaps.Unsorted.Size (A_Into) = Total,
              "meld: unsorted size is the sum");
@@ -586,6 +622,25 @@ procedure Heaps_Test is
              "meld: block-min size is the sum");
       Check (Heaps.Block_Min.Is_Empty (C_From),
              "meld: block-min source is emptied");
+      Check (Heaps.Weak.Size (W_Into) = Total, "meld: weak size is the sum");
+      Check (Heaps.Weak.Is_Empty (W_From), "meld: weak source is emptied");
+      Check (Heaps.Min_Max.Size (M_Into) = Total,
+             "meld: min-max size is the sum");
+      Check (Heaps.Min_Max.Is_Empty (M_From),
+             "meld: min-max source is emptied");
+      Check (Heaps.Interval.Size (V_Into) = Total,
+             "meld: interval size is the sum");
+      Check (Heaps.Interval.Is_Empty (V_From),
+             "meld: interval source is emptied");
+      Check (Heaps.Beap.Size (P_Into) = Total, "meld: beap size is the sum");
+      Check (Heaps.Beap.Is_Empty (P_From), "meld: beap source is emptied");
+      Check (Heaps.Sorted.Size (S_Into) = Total,
+             "meld: sorted size is the sum");
+      Check (Heaps.Sorted.Is_Empty (S_From), "meld: sorted source is emptied");
+      Check (Heaps.Leftist.Size (L_Into) = Total,
+             "meld: leftist size is the sum");
+      Check (Heaps.Leftist.Is_Empty (L_From),
+             "meld: leftist source is emptied");
 
       --  Sort the oracle so that the drain order can be compared against it
 
@@ -609,17 +664,49 @@ procedure Heaps_Test is
          Check (Heaps.Dary.Peek_Min (D_Into) = Heaps.Dary.Min_Of (D_Into),
                 "meld: d-ary peek agrees with the array minimum");
 
+         Check (Heaps.Weak.Peek_Min (W_Into) = Heaps.Weak.Min_Of (W_Into),
+                "meld: weak peek agrees with the array minimum");
+
+         Check (Heaps.Min_Max.Peek_Min (M_Into)
+                = Heaps.Min_Max.Min_Of (M_Into),
+                "meld: min-max peek agrees with the array minimum");
+
+         Check (Heaps.Interval.Peek_Min (V_Into)
+                = Heaps.Interval.Min_Of (V_Into),
+                "meld: interval peek agrees with the array minimum");
+
+         Check (Heaps.Beap.Peek_Min (P_Into) = Heaps.Beap.Min_Of (P_Into),
+                "meld: beap peek agrees with the array minimum");
+
+         Check (Heaps.Leftist.Peek_Min (L_Into)
+                = Heaps.Leftist.Min_Of (L_Into),
+                "meld: leftist peek agrees with the array minimum");
+
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
          Heaps.Dary.Extract_Min (D_Into, D_Key);
          Heaps.Block_Min.Extract_Min (C_Into, C_Key);
+         Heaps.Weak.Extract_Min (W_Into, W_Key);
+         Heaps.Min_Max.Extract_Min (M_Into, M_Key);
+         Heaps.Interval.Extract_Min (V_Into, V_Key);
+         Heaps.Beap.Extract_Min (P_Into, P_Key);
+         Heaps.Sorted.Extract_Min (S_Into, S_Key);
+         Heaps.Leftist.Extract_Min (L_Into, L_Key);
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
          Check (D_Key = Oracle (I), "meld: d-ary drain matches the oracle");
          Check (C_Key = Oracle (I),
                 "meld: block-min drain matches the oracle");
-         Check (A_Key = B_Key and A_Key = D_Key and A_Key = C_Key,
+         Check (W_Key = Oracle (I), "meld: weak drain matches the oracle");
+         Check (M_Key = Oracle (I), "meld: min-max drain matches the oracle");
+         Check (V_Key = Oracle (I), "meld: interval drain matches the oracle");
+         Check (P_Key = Oracle (I), "meld: beap drain matches the oracle");
+         Check (S_Key = Oracle (I), "meld: sorted drain matches the oracle");
+         Check (L_Key = Oracle (I), "meld: leftist drain matches the oracle");
+         Check (A_Key = B_Key and A_Key = D_Key and A_Key = C_Key
+                and A_Key = W_Key and A_Key = M_Key and A_Key = V_Key
+                and A_Key = P_Key and A_Key = S_Key and A_Key = L_Key,
                 "meld: the implementations agree");
          Check (B_Key >= Prev, "meld: keys come out in non-decreasing order");
          Prev := B_Key;
@@ -629,6 +716,11 @@ procedure Heaps_Test is
              "meld: unsorted empty after draining");
       Check (Heaps.Binary.Is_Empty (B_Into),
              "meld: binary empty after draining");
+      Check (Heaps.Beap.Is_Empty (P_Into), "meld: beap empty after draining");
+      Check (Heaps.Sorted.Is_Empty (S_Into),
+             "meld: sorted empty after draining");
+      Check (Heaps.Leftist.Is_Empty (L_Into),
+             "meld: leftist empty after draining");
    end Test_Meld;
 
    --  The arena: several trees sharing one pool. Heaps.Leftist_Pool is a

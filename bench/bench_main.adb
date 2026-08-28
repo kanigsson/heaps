@@ -54,14 +54,20 @@ begin
    Bench.Sorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Unsorted_Heap.Runner.Run (Baseline_Sizes);
 
-   --  Meld. Only the entries that have the operation so far; see the Planned
-   --  operations section of README.md for the rest.
+   --  Meld, over the whole catalogue. Each entry runs over the sizes its
+   --  own worst operation can afford, as the single-heap scenarios do.
    Bench.Binary_Heap.Meld_Runner.Run (Sizes);
    Bench.Dary_4.Meld_Runner.Run (Sizes);
    Bench.Dary_8.Meld_Runner.Run (Sizes);
    Bench.Dary_16.Meld_Runner.Run (Sizes);
+   Bench.Weak_Heap.Meld_Runner.Run (Sizes);
+   Bench.Min_Max_Heap.Meld_Runner.Run (Sizes);
+   Bench.Interval_Heap.Meld_Runner.Run (Sizes);
    Bench.Block_Min_Heap.Meld_Runner.Run (Beap_Sizes);
+   Bench.Beap_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
+   Bench.Sorted_Heap.Meld_Runner.Run (Baseline_Sizes);
+   Bench.Leftist_Heap.Meld_Runner.Run (Sizes);
    Bench.Leftist_Arena.Meld_Runner.Run (Sizes);
 
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
