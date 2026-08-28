@@ -175,6 +175,52 @@ after a step or two and the extractions dominate.
 Use the interval heap when both ends are read more often than the queue is
 filled, and the min-max heap when insertion dominates.
 
+### Open buffered heap
+
+The open entry is a workload-independent hybrid built around the interval
+heap. It buffers the initial insertion wave, bulk-builds on the first removal,
+and then collects later insertions in a small interval heap. The thresholds
+depend only on the current sizes. They do not inspect key order, generator
+state, scenario names or fixed phase lengths.
+
+Results from the run that introduced the buffered entry, at
+`n = 1_000_000`:
+
+| scenario | binary | interval | open-buffered |
+|----------|-------:|---------:|--------------:|
+| `fill` | 9.55 | 17.55 | 3.50 |
+| `drain` | 88.92 | 110.15 | 126.08 |
+| `churn` | 48.73 | 67.24 | 69.96 |
+| `replace-forward` | 23.24 | 35.66 | 55.56 |
+| `insert-asc` | 1.87 | 48.43 | 2.78 |
+| `insert-desc` | 10.69 | 39.69 | 3.17 |
+
+The cheap insertion rows are genuine deferred work: no ordering structure is
+built until an operation needs one. `drain` consequently includes the linear
+build that the canonical heaps paid during their untimed prefill. Once active,
+the open heap stays close to the interval heap on random churn, but its pending
+batch is a loss on forward replacement at this size.
+
+Double-ended results from the same run:
+
+| scenario | min-max | interval | open-buffered |
+|----------|--------:|---------:|--------------:|
+| `drain-max` | 184.37 | 117.53 | 132.14 |
+| `drain-both` | 190.67 | 115.53 | 131.64 |
+| `trim` | 98.32 | 73.89 | 71.81 |
+
+The open heap is the first entry to edge out the interval heap on `trim`: a new
+key can remain in the small pending heap and be removed again without entering
+the million-element base. Pure drains are 12--14% slower because they pay for
+the initial bulk build inside the measured phase.
+
+There is no canonical definition of "overall" in this suite. If the six main
+scenarios are weighted equally by geometric mean, the open heap is 4% ahead of
+binary. Across all nine main and double-ended scenarios it is within 0.3% of an
+unattainable envelope that uses binary for the six min-only rows and interval
+for the three double-ended rows. Against interval alone, which offers the same
+API, its nine-scenario geometric mean is 50% lower.
+
 ## Leftist heap
 
 The leftist heap is the first structure here whose tree is a pool of linked
@@ -448,7 +494,9 @@ binary heap, the three d-ary instances, the weak heap, the min-max heap and the
 interval heap; three insert the keys one at a time, because their insertion is
 cheap enough that this is the better algorithm -- the unsorted array, the
 block-min directory and the beap; the sorted array merges two runs; and the two
-arenas splice.
+arenas splice. The open entry preserves a lazy destination by concatenating
+physical keys, and otherwise chooses buffered insertion or an interval-heap
+rebuild from the current sizes.
 
 `leftist` is `Heaps.Leftist_Pool`, an instance of the arena. The catalogue used
 to carry a second unit holding the same tree in a pool of its own, and this
@@ -493,6 +541,10 @@ one-key heaps into it.
 | interval | 10 000 | 23 182.81 | 33 804.19 |
 | interval | 100 000 | 225 052.50 | 345 356.68 |
 | interval | 1 000 000 | 2 240 038.72 | 3 435 181.12 |
+| open-buffered | 1 000 | 165.00 | 7.50 |
+| open-buffered | 10 000 | 1 515.00 | 7.50 |
+| open-buffered | 100 000 | 15 009.00 | 8.75 |
+| open-buffered | 1 000 000 | 151 786.00 | 10.00 |
 | block-min | 1 000 | 148.13 | 5.00 |
 | block-min | 10 000 | 1 466.25 | 5.63 |
 | block-min | 100 000 | 14 754.00 | 6.25 |
@@ -517,13 +569,33 @@ when the remaining six melds were added so that every figure in it comes from
 one run. The machine and the switches are the same, and the entries that were
 already there reproduce their earlier figures within about 15%. The `leftist`
 row is later still: it was measured again when the arena became the only
-leftist unit, and it replaces two rows, one per unit.
+leftist unit, and it replaces two rows, one per unit. The `open-buffered` row
+is from the still later run that added its meld adapter; the established rows
+in that run reproduced closely, and all checksums agreed.
 
 The single- and double-digit entries deserve a caveat the rest do not. A
 measurement here is sixteen melds, so at those magnitudes the figure is a few
 hundred nanoseconds of wall clock and the run-to-run spread is a factor of
 several. What they establish is the absence of growth in `n`, not their own
 second digit.
+
+### The open entry keeps lazy heaps lazy
+
+Neither meld scenario queries its heaps before the timed phase, so every open
+heap still contains only staged keys. `Meld` consequently concatenates those
+keys without first imposing interval-heap order. In `meld-accumulate`, each of
+the `n` keys is copied once across the sixteen melds: 165, 1 515, 15 009 and
+151 786 ns per meld over four decades is linear growth. At a million keys this
+is 9.2 times faster than rebuilding the binary heap, but 130 times slower than
+the leftist arena's splice.
+
+`meld-into-full` copies one key per call and stays flat at 7.50--10.00 ns per
+meld. This is not knowledge of that scenario: the same path applies whenever
+both operands are still lazy, whatever their sizes or keys. It does expose the
+benchmark's timing boundary. The checksum drain builds the resulting interval
+heap outside the timed phase, so these figures measure meld latency, not
+"meld and become ready to extract" latency. A caller that immediately extracts
+pays that deferred linear build in the extraction.
 
 ### The cost is set by the accumulator, not by the operand
 
@@ -678,9 +750,9 @@ accumulator outside the timed phase, and all fourteen entries agree at every
 size. Between them these melds are a bottom-up rebuild at four different
 arities, a bottom-up build over distinguished ancestors, a two-level
 trickle-down, a paired double-ended build, a block copy, three runs of single
-insertions, a backwards merge of two sorted runs, a shifted copy of a node pool
-and a splice of two right spines. They have very little in common beyond the
-multiset they are supposed to produce, so the agreement is worth something. The
+insertions, a backwards merge of two sorted runs, a lazy concatenation and a
+splice of two right spines. They have very little in common beyond the multiset
+they are supposed to produce, so the agreement is worth something. The
 arenas are the useful ones to have in that set: they are the only entries that
 never move a key, so they share no code path with any of the others beyond the
 key stream itself. The two of them agree with each other on every scenario and

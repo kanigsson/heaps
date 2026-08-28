@@ -16,9 +16,11 @@
 --  phase of an external sort, and the shape of a k-way join over sorted
 --  streams.
 --
---  For a mergeable heap the k melds cost O(k log n) altogether. For an
---  implicit heap that has to rebuild, they cost O(k * n / Operands * k), which
---  is the gap the column exists to show.
+--  For a mergeable heap the k melds cost O(k log n) altogether. For a
+--  materialized implicit heap that has to rebuild, they cost
+--  O(k * n / Operands * k), which is the gap the column exists to show. A
+--  lazy implementation may defer that materialization until the checksum
+--  drain; this benchmark deliberately times the Meld operation itself.
 
 generic
    Heap_Name : String;

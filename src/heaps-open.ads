@@ -2,13 +2,16 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  Adaptive, unrestricted priority queue used by the open benchmark entry.
+--  Buffered, unrestricted priority queue used by the open benchmark entry.
 --
 --  Unlike the canonical heaps in this collection, this package is not
 --  currently analyzed or proved with SPARK and makes no promise about one
---  fixed representation. It obeys the same online min/max queue semantics for
---  arbitrary Key_Type values, but adapts to the operations already observed
---  and uses a second Capacity-sized array as scratch storage.
+--  fixed representation. It delays the initial build, keeps small queues in
+--  an unsorted array, and batches later insertions around an interval heap.
+--  Every policy decision depends only on the current representation and size;
+--  none depends on benchmark scenarios, key patterns or future operations.
+
+with Heaps.Interval;
 
 package Heaps.Open with SPARK_Mode => Off is
 
@@ -31,6 +34,13 @@ package Heaps.Open with SPARK_Mode => Off is
      with Pre  => not Is_Full (H),
           Post => Size (H) = Size (H)'Old + 1;
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Size (From) <= Into.Capacity - Size (Into),
+          Post => Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From);
+   --  Destructive meld. Two lazy heaps remain lazy; otherwise a size-based
+   --  rule chooses between buffered insertion and an interval-heap rebuild.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H),
           Post => Size (H) = Size (H)'Old - 1;
@@ -41,21 +51,23 @@ package Heaps.Open with SPARK_Mode => Off is
 
 private
 
-   type Mode_Kind is
-     (Buffer, Probe_Min, Probe_Max, Min_Heap, Max_Heap, Sorted);
+   Small_Limit   : constant Extended_Index := 32;
+   Pending_Limit : constant Extended_Index := 256;
+
+   type Mode_Kind is (Initial, Active);
 
    type Heap (Capacity : Extended_Index) is record
-      Keys    : Key_Array (1 .. Capacity);
-      Scratch : Key_Array (1 .. Capacity);
-      Count   : Extended_Index := 0;
-      Mode    : Mode_Kind := Buffer;
+      Base : Interval.Heap (Capacity);
+      Pending : Interval.Heap (Pending_Limit);
 
-      --  Only Sorted uses Keys (First .. Last). Every other representation
-      --  uses Keys (1 .. Count).
+      --  Before the first removal, insertion is genuinely lazy. Staged holds
+      --  that initial wave and caches both extremes so Peek remains O(1).
 
-      First : Index := 1;
-      Last  : Extended_Index := 0;
-   end record
-     with Predicate => Count <= Capacity;
+      Staged      : Key_Array (1 .. Capacity);
+      Staged_Last : Extended_Index := 0;
+      Staged_Min  : Extended_Index := 0;
+      Staged_Max  : Extended_Index := 0;
+      Mode        : Mode_Kind := Initial;
+   end record;
 
 end Heaps.Open;

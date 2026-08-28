@@ -83,16 +83,25 @@ the last key.
 
 `Heaps.Open` is an intentionally unverified Ada implementation rather than
 another canonical heap. It obeys the same online API for arbitrary keys, but
-may use extra memory and adapt to the operation history. It does not inspect
-scenario names, generator state or future operations.
+may use programming techniques outside SPARK and the array-only restrictions
+of the canonical entries.
 
-The entry buffers an insertion phase. After the first extraction it either
-builds a binary min/max heap for mixed traffic or radix-sorts the integer keys
-for a continuing drain; switching ends also selects the sorted representation.
-It is workload-specialized: its adaptation policy was designed with the
-benchmark's phased drains and alternating churn in mind. It is included to show
-what an implementation optimized for those workloads can do, not as part of
-the verified comparison set.
+The current entry is a buffered interval heap. It keeps small queues in an
+unsorted array, delays construction of the main heap until an extraction is
+actually requested, and thereafter collects insertions in a small interval
+heap. A size-based cost rule either inserts that batch into the main heap or
+melds it by a linear rebuild. The implementation does not recognize benchmark
+scenarios, generator state, key patterns or future operations.
+
+Meld follows the same rule. Two heaps that have not yet needed ordering remain
+lazy and concatenate their staged keys. Once an ordered representation exists,
+a small source uses buffered insertion and a comparable source uses the
+interval heap's linear rebuild.
+
+An adaptive open entry is still admissible when its policy is a documented,
+general online strategy chosen independently of this benchmark. Recognizing a
+known scenario from its operation sequence, fixed seeds or key construction is
+outside the intended comparison.
 
 ## Meld
 
@@ -109,6 +118,7 @@ rebuild across the whole set.
 | Weak heap | O(n + m) | yes | append then join each node to its ancestor |
 | Min-max heap | O(n + m) | yes | append then trickle down, bottom-up |
 | Interval heap | O(n + m) | yes | append, pair the slots, then both ends |
+| Open buffered heap | O(m), O(m log n), or O(n + m) | no | concatenate, insert, or rebuild according to representation and size |
 | Sorted array | O(n + m) | yes | the merge of two sorted runs |
 | Beap | O(m sqrt n) | yes | one insertion per key |
 | Block-min directory | O(m) | yes | one insertion per key |

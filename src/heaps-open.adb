@@ -2,259 +2,257 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
-with Interfaces; use Interfaces;
-
 package body Heaps.Open is
 
-   procedure Build_Min_Heap (H : in out Heap);
-   procedure Build_Max_Heap (H : in out Heap);
-   procedure Insert_Min_Heap (H : in out Heap; K : Key_Type);
-   procedure Insert_Max_Heap (H : in out Heap; K : Key_Type);
-   procedure Extract_Min_Heap (H : in out Heap; K : out Key_Type);
-   procedure Extract_Max_Heap (H : in out Heap; K : out Key_Type);
-   procedure Extract_Buffer
-     (H : in out Heap; Min_Side : Boolean; K : out Key_Type);
-   procedure Radix_Sort (H : in out Heap);
+   function Total_Size (H : Heap) return Extended_Index;
+
+   procedure Append_Staged (H : in out Heap; K : Key_Type);
+   procedure Remove_Staged
+     (H : in out Heap; Position : Index; K : out Key_Type);
+   procedure Build_Base (H : in out Heap);
+   procedure Flush_Pending (H : in out Heap);
+   procedure Activate (H : in out Heap);
+   procedure Append_All (Into : in out Heap; From : Heap);
+   procedure Insert_All (Into : in out Heap; From : Heap);
+
+   ----------------
+   -- Total_Size --
+   ----------------
+
+   function Total_Size (H : Heap) return Extended_Index is
+     (if H.Mode = Initial
+      then H.Staged_Last
+      else H.Base.Last + H.Pending.Last);
 
    -------------------
-   -- Sift_Down_Min --
+   -- Append_Staged --
    -------------------
 
-   procedure Sift_Down_Min (H : in out Heap; Root : Index) is
-      I     : Index := Root;
-      Child : Index;
-      Moved : constant Key_Type := H.Keys (Root);
+   procedure Append_Staged (H : in out Heap; K : Key_Type) is
    begin
-      while I <= H.Count / 2 loop
-         Child := 2 * I;
-         if Child < H.Count and then H.Keys (Child + 1) < H.Keys (Child) then
-            Child := Child + 1;
-         end if;
-         exit when H.Keys (Child) >= Moved;
-         H.Keys (I) := H.Keys (Child);
-         I := Child;
-      end loop;
-      H.Keys (I) := Moved;
-   end Sift_Down_Min;
+      H.Staged_Last := H.Staged_Last + 1;
+      H.Staged (H.Staged_Last) := K;
 
-   -------------------
-   -- Sift_Down_Max --
-   -------------------
-
-   procedure Sift_Down_Max (H : in out Heap; Root : Index) is
-      I     : Index := Root;
-      Child : Index;
-      Moved : constant Key_Type := H.Keys (Root);
-   begin
-      while I <= H.Count / 2 loop
-         Child := 2 * I;
-         if Child < H.Count and then H.Keys (Child + 1) > H.Keys (Child) then
-            Child := Child + 1;
-         end if;
-         exit when H.Keys (Child) <= Moved;
-         H.Keys (I) := H.Keys (Child);
-         I := Child;
-      end loop;
-      H.Keys (I) := Moved;
-   end Sift_Down_Max;
-
-   --------------------
-   -- Build_Min_Heap --
-   --------------------
-
-   procedure Build_Min_Heap (H : in out Heap) is
-   begin
-      for I in reverse 1 .. H.Count / 2 loop
-         Sift_Down_Min (H, I);
-      end loop;
-      H.Mode := Min_Heap;
-   end Build_Min_Heap;
-
-   --------------------
-   -- Build_Max_Heap --
-   --------------------
-
-   procedure Build_Max_Heap (H : in out Heap) is
-   begin
-      for I in reverse 1 .. H.Count / 2 loop
-         Sift_Down_Max (H, I);
-      end loop;
-      H.Mode := Max_Heap;
-   end Build_Max_Heap;
-
-   ---------------------
-   -- Insert_Min_Heap --
-   ---------------------
-
-   procedure Insert_Min_Heap (H : in out Heap; K : Key_Type) is
-      Hole : Index;
-   begin
-      H.Count := H.Count + 1;
-      Hole := H.Count;
-      while Hole > 1 and then H.Keys (Hole / 2) > K loop
-         H.Keys (Hole) := H.Keys (Hole / 2);
-         Hole := Hole / 2;
-      end loop;
-      H.Keys (Hole) := K;
-   end Insert_Min_Heap;
-
-   ---------------------
-   -- Insert_Max_Heap --
-   ---------------------
-
-   procedure Insert_Max_Heap (H : in out Heap; K : Key_Type) is
-      Hole : Index;
-   begin
-      H.Count := H.Count + 1;
-      Hole := H.Count;
-      while Hole > 1 and then H.Keys (Hole / 2) < K loop
-         H.Keys (Hole) := H.Keys (Hole / 2);
-         Hole := Hole / 2;
-      end loop;
-      H.Keys (Hole) := K;
-   end Insert_Max_Heap;
-
-   ----------------------
-   -- Extract_Min_Heap --
-   ----------------------
-
-   procedure Extract_Min_Heap (H : in out Heap; K : out Key_Type) is
-   begin
-      K := H.Keys (1);
-      H.Keys (1) := H.Keys (H.Count);
-      H.Count := H.Count - 1;
-      if H.Count > 0 then
-         Sift_Down_Min (H, 1);
+      if H.Staged_Last = 1 then
+         H.Staged_Min := 1;
+         H.Staged_Max := 1;
       else
-         H.Mode := Buffer;
+         if K < H.Staged (H.Staged_Min) then
+            H.Staged_Min := H.Staged_Last;
+         end if;
+         if K > H.Staged (H.Staged_Max) then
+            H.Staged_Max := H.Staged_Last;
+         end if;
       end if;
-   end Extract_Min_Heap;
+   end Append_Staged;
 
-   ----------------------
-   -- Extract_Max_Heap --
-   ----------------------
+   -------------------
+   -- Remove_Staged --
+   -------------------
 
-   procedure Extract_Max_Heap (H : in out Heap; K : out Key_Type) is
-   begin
-      K := H.Keys (1);
-      H.Keys (1) := H.Keys (H.Count);
-      H.Count := H.Count - 1;
-      if H.Count > 0 then
-         Sift_Down_Max (H, 1);
-      else
-         H.Mode := Buffer;
-      end if;
-   end Extract_Max_Heap;
-
-   --------------------
-   -- Extract_Buffer --
-   --------------------
-
-   procedure Extract_Buffer
-     (H : in out Heap; Min_Side : Boolean; K : out Key_Type)
+   procedure Remove_Staged
+     (H : in out Heap; Position : Index; K : out Key_Type)
    is
-      Best : Index := 1;
    begin
-      for I in 2 .. H.Count loop
-         if (if Min_Side then H.Keys (I) < H.Keys (Best)
-             else H.Keys (I) > H.Keys (Best))
+      K := H.Staged (Position);
+      H.Staged (Position) := H.Staged (H.Staged_Last);
+      H.Staged_Last := H.Staged_Last - 1;
+
+      if H.Staged_Last = 0 then
+         H.Staged_Min := 0;
+         H.Staged_Max := 0;
+      else
+         H.Staged_Min := 1;
+         H.Staged_Max := 1;
+         for I in 2 .. H.Staged_Last loop
+            if H.Staged (I) < H.Staged (H.Staged_Min) then
+               H.Staged_Min := I;
+            end if;
+            if H.Staged (I) > H.Staged (H.Staged_Max) then
+               H.Staged_Max := I;
+            end if;
+         end loop;
+      end if;
+   end Remove_Staged;
+
+   ----------
+   -- Swap --
+   ----------
+
+   procedure Swap (H : in out Interval.Heap; Left, Right : Index) is
+      Temporary : constant Key_Type := H.Keys (Left);
+   begin
+      H.Keys (Left) := H.Keys (Right);
+      H.Keys (Right) := Temporary;
+   end Swap;
+
+   ----------
+   -- Slot --
+   ----------
+
+   function Slot
+     (H : Interval.Heap; Min_Side : Boolean; Node : Index) return Index is
+     (if Min_Side or else 2 * Node > H.Last
+      then 2 * Node - 1
+      else 2 * Node);
+
+   ---------------
+   -- Sift_Down --
+   ---------------
+
+   procedure Sift_Down
+     (H : in out Interval.Heap; Start : Index; Min_Side : Boolean)
+   is
+      I          : Index := Start;
+      Child      : Index;
+      Right      : Index;
+      Node_Count : constant Extended_Index := (H.Last + 1) / 2;
+   begin
+      while 2 * I <= Node_Count loop
+         Child := 2 * I;
+         Right := Child + 1;
+
+         if Right <= Node_Count
+           and then
+             (if Min_Side
+              then H.Keys (Slot (H, True, Right))
+                     < H.Keys (Slot (H, True, Child))
+              else H.Keys (Slot (H, False, Right))
+                     > H.Keys (Slot (H, False, Child)))
          then
-            Best := I;
+            Child := Right;
+         end if;
+
+         exit when
+           (if Min_Side
+            then H.Keys (Slot (H, True, Child))
+                   >= H.Keys (Slot (H, True, I))
+            else H.Keys (Slot (H, False, Child))
+                   <= H.Keys (Slot (H, False, I)));
+
+         Swap (H, Slot (H, Min_Side, I), Slot (H, Min_Side, Child));
+
+         if H.Keys (Slot (H, True, Child))
+           > H.Keys (Slot (H, False, Child))
+         then
+            Swap (H, Slot (H, True, Child), Slot (H, False, Child));
+         end if;
+
+         I := Child;
+      end loop;
+   end Sift_Down;
+
+   ----------------
+   -- Build_Base --
+   ----------------
+
+   procedure Build_Base (H : in out Heap) is
+      Node_Count : Extended_Index;
+   begin
+      H.Base.Last := H.Staged_Last;
+      H.Base.Keys (1 .. H.Staged_Last) := H.Staged (1 .. H.Staged_Last);
+      Node_Count := (H.Base.Last + 1) / 2;
+
+      --  Form the intervals first, then heapify their low and high sides.
+
+      for Node in 1 .. Node_Count loop
+         if 2 * Node <= H.Base.Last
+           and then H.Base.Keys (2 * Node - 1) > H.Base.Keys (2 * Node)
+         then
+            Swap (H.Base, 2 * Node - 1, 2 * Node);
          end if;
       end loop;
 
-      K := H.Keys (Best);
-      H.Keys (Best) := H.Keys (H.Count);
-      H.Count := H.Count - 1;
-      if H.Count = 0 then
-         H.Mode := Buffer;
-      elsif Min_Side then
-         H.Mode := Probe_Min;
+      for Node in reverse 1 .. Node_Count loop
+         Sift_Down (H.Base, Node, True);
+         Sift_Down (H.Base, Node, False);
+      end loop;
+
+      H.Staged_Last := 0;
+      H.Staged_Min := 0;
+      H.Staged_Max := 0;
+      H.Mode := Active;
+   end Build_Base;
+
+   -------------------
+   -- Flush_Pending --
+   -------------------
+
+   procedure Flush_Pending (H : in out Heap) is
+   begin
+      if H.Pending.Last = 0 then
+         return;
+      end if;
+
+      --  Rebuilding is worthwhile only when the pending batch is a material
+      --  fraction of the base. For a small batch, preserve the base and pay
+      --  for logarithmic insertions instead. This is a size-only cost rule.
+
+      if H.Base.Last = 0 or else 8 * H.Pending.Last >= H.Base.Last then
+         Interval.Meld (H.Base, H.Pending);
       else
-         H.Mode := Probe_Max;
+         for I in 1 .. H.Pending.Last loop
+            Interval.Insert (H.Base, H.Pending.Keys (I));
+         end loop;
+         Interval.Clear (H.Pending);
       end if;
-   end Extract_Buffer;
+   end Flush_Pending;
 
-   -------------------
-   -- Counting_Pass --
-   -------------------
+   --------------
+   -- Activate --
+   --------------
 
-   procedure Counting_Pass
-     (Source : Key_Array;
-      Target : in out Key_Array;
-      Count  : Extended_Index;
-      Amount : Natural)
-   is
-      subtype Bucket is Natural range 0 .. 255;
-      type Counter_Array is array (Bucket) of Extended_Index;
-
-      Frequency : Counter_Array := [others => 0];
-      Position  : Counter_Array;
-
-      function Bucket_Of (K : Key_Type) return Bucket is
-         Bits : Unsigned_64;
-      begin
-         --  Flipping the sign bit turns signed order into unsigned
-         --  lexicographic order. Use four byte passes on the usual 32-bit
-         --  Integer and eight if a target provides a wider Integer.
-
-         if Integer'Size <= 32 then
-            Bits := Unsigned_64
-              (Unsigned_32'Mod (Integer (K)) xor 16#8000_0000#);
+   procedure Activate (H : in out Heap) is
+   begin
+      if H.Mode = Initial then
+         if H.Staged_Last = 0 then
+            H.Mode := Active;
          else
-            Bits := Unsigned_64'Mod (Long_Long_Integer (K))
-              xor 16#8000_0000_0000_0000#;
+            Build_Base (H);
          end if;
-         return Bucket (Shift_Right (Bits, Amount) and 16#FF#);
-      end Bucket_Of;
-
-      Next : Extended_Index := 1;
-   begin
-      for I in 1 .. Count loop
-         declare
-            B : constant Bucket := Bucket_Of (Source (I));
-         begin
-            Frequency (B) := Frequency (B) + 1;
-         end;
-      end loop;
-
-      for B in Bucket loop
-         Position (B) := Next;
-         Next := Next + Frequency (B);
-      end loop;
-
-      for I in 1 .. Count loop
-         declare
-            B : constant Bucket := Bucket_Of (Source (I));
-         begin
-            Target (Position (B)) := Source (I);
-            Position (B) := Position (B) + 1;
-         end;
-      end loop;
-   end Counting_Pass;
-
-   ----------------
-   -- Radix_Sort --
-   ----------------
-
-   procedure Radix_Sort (H : in out Heap) is
-   begin
-      Counting_Pass (H.Keys, H.Scratch, H.Count, 0);
-      Counting_Pass (H.Scratch, H.Keys, H.Count, 8);
-      Counting_Pass (H.Keys, H.Scratch, H.Count, 16);
-      Counting_Pass (H.Scratch, H.Keys, H.Count, 24);
-
-      if Integer'Size > 32 then
-         Counting_Pass (H.Keys, H.Scratch, H.Count, 32);
-         Counting_Pass (H.Scratch, H.Keys, H.Count, 40);
-         Counting_Pass (H.Keys, H.Scratch, H.Count, 48);
-         Counting_Pass (H.Scratch, H.Keys, H.Count, 56);
       end if;
+      Flush_Pending (H);
+   end Activate;
 
-      H.First := 1;
-      H.Last := H.Count;
-      H.Mode := Sorted;
-   end Radix_Sort;
+   ----------------
+   -- Append_All --
+   ----------------
+
+   procedure Append_All (Into : in out Heap; From : Heap) is
+   begin
+      if From.Mode = Initial then
+         for I in 1 .. From.Staged_Last loop
+            Append_Staged (Into, From.Staged (I));
+         end loop;
+      else
+         for I in 1 .. From.Base.Last loop
+            Append_Staged (Into, From.Base.Keys (I));
+         end loop;
+         for I in 1 .. From.Pending.Last loop
+            Append_Staged (Into, From.Pending.Keys (I));
+         end loop;
+      end if;
+   end Append_All;
+
+   ----------------
+   -- Insert_All --
+   ----------------
+
+   procedure Insert_All (Into : in out Heap; From : Heap) is
+   begin
+      if From.Mode = Initial then
+         for I in 1 .. From.Staged_Last loop
+            Insert (Into, From.Staged (I));
+         end loop;
+      else
+         for I in 1 .. From.Base.Last loop
+            Insert (Into, From.Base.Keys (I));
+         end loop;
+         for I in 1 .. From.Pending.Last loop
+            Insert (Into, From.Pending.Keys (I));
+         end loop;
+      end if;
+   end Insert_All;
 
    -----------
    -- Clear --
@@ -262,67 +260,68 @@ package body Heaps.Open is
 
    procedure Clear (H : in out Heap) is
    begin
-      H.Count := 0;
-      H.First := 1;
-      H.Last := 0;
-      H.Mode := Buffer;
+      Interval.Clear (H.Base);
+      Interval.Clear (H.Pending);
+      H.Staged_Last := 0;
+      H.Staged_Min := 0;
+      H.Staged_Max := 0;
+      H.Mode := Initial;
    end Clear;
 
    ----------
    -- Size --
    ----------
 
-   function Size (H : Heap) return Extended_Index is (H.Count);
+   function Size (H : Heap) return Extended_Index is (Total_Size (H));
 
    --------------
    -- Is_Empty --
    --------------
 
-   function Is_Empty (H : Heap) return Boolean is (H.Count = 0);
+   function Is_Empty (H : Heap) return Boolean is (Total_Size (H) = 0);
 
    -------------
    -- Is_Full --
    -------------
 
-   function Is_Full (H : Heap) return Boolean is (H.Count = H.Capacity);
-
-   ----------------
-   -- Best_Value --
-   ----------------
-
-   function Best_Value (H : Heap; Min_Side : Boolean) return Key_Type is
-      Best : Index;
-   begin
-      if H.Mode = Sorted then
-         return H.Keys (if Min_Side then H.First else H.Last);
-      elsif (H.Mode = Min_Heap and then Min_Side)
-        or else (H.Mode = Max_Heap and then not Min_Side)
-      then
-         return H.Keys (1);
-      end if;
-
-      Best := 1;
-      for I in 2 .. H.Count loop
-         if (if Min_Side then H.Keys (I) < H.Keys (Best)
-             else H.Keys (I) > H.Keys (Best))
-         then
-            Best := I;
-         end if;
-      end loop;
-      return H.Keys (Best);
-   end Best_Value;
+   function Is_Full (H : Heap) return Boolean is
+     (Total_Size (H) = H.Capacity);
 
    --------------
    -- Peek_Min --
    --------------
 
-   function Peek_Min (H : Heap) return Key_Type is (Best_Value (H, True));
+   function Peek_Min (H : Heap) return Key_Type is
+   begin
+      if H.Mode = Initial then
+         return H.Staged (H.Staged_Min);
+      elsif H.Base.Last = 0 then
+         return Interval.Peek_Min (H.Pending);
+      elsif H.Pending.Last = 0 then
+         return Interval.Peek_Min (H.Base);
+      else
+         return Key_Type'Min
+           (Interval.Peek_Min (H.Base), Interval.Peek_Min (H.Pending));
+      end if;
+   end Peek_Min;
 
    --------------
    -- Peek_Max --
    --------------
 
-   function Peek_Max (H : Heap) return Key_Type is (Best_Value (H, False));
+   function Peek_Max (H : Heap) return Key_Type is
+   begin
+      if H.Mode = Initial then
+         return H.Staged (H.Staged_Max);
+      elsif H.Base.Last = 0 then
+         return Interval.Peek_Max (H.Pending);
+      elsif H.Pending.Last = 0 then
+         return Interval.Peek_Max (H.Base);
+      else
+         return Key_Type'Max
+           (Interval.Peek_Max (H.Base), Interval.Peek_Max (H.Pending));
+      end if;
+   end Peek_Max;
 
    ------------
    -- Insert --
@@ -330,41 +329,50 @@ package body Heaps.Open is
 
    procedure Insert (H : in out Heap; K : Key_Type) is
    begin
-      case H.Mode is
-         when Buffer =>
-            H.Count := H.Count + 1;
-            H.Keys (H.Count) := K;
-
-         when Probe_Min =>
-            H.Count := H.Count + 1;
-            H.Keys (H.Count) := K;
-            Build_Min_Heap (H);
-
-         when Probe_Max =>
-            H.Count := H.Count + 1;
-            H.Keys (H.Count) := K;
-            Build_Max_Heap (H);
-
-         when Min_Heap =>
-            Insert_Min_Heap (H, K);
-
-         when Max_Heap =>
-            Insert_Max_Heap (H, K);
-
-         when Sorted =>
-            --  A drain has turned back into mixed traffic. Compact the live
-            --  sorted range and let the next removal reveal the favored end.
-
-            if H.Count > 0 and then H.First /= 1 then
-               H.Keys (1 .. H.Count) := H.Keys (H.First .. H.Last);
-            end if;
-            H.Count := H.Count + 1;
-            H.Keys (H.Count) := K;
-            H.First := 1;
-            H.Last := 0;
-            H.Mode := Buffer;
-      end case;
+      if H.Mode = Initial then
+         Append_Staged (H, K);
+      else
+         if H.Pending.Last = Pending_Limit then
+            Flush_Pending (H);
+         end if;
+         Interval.Insert (H.Pending, K);
+      end if;
    end Insert;
+
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      From_Size : constant Extended_Index := Total_Size (From);
+   begin
+      if From_Size = 0 then
+         Clear (From);
+
+      elsif Into.Mode = Initial then
+         --  Nothing has required an ordered representation yet. Preserve
+         --  that state and concatenate the source's physical keys.
+
+         Append_All (Into, From);
+         Clear (From);
+
+      elsif From_Size <= Total_Size (Into) / 8 then
+         --  Rebuilding a much larger active heap would cost more than adding
+         --  the smaller source through its buffered insertion path.
+
+         Insert_All (Into, From);
+         Clear (From);
+
+      else
+         --  For comparable heaps, consolidate both representations and use
+         --  the interval heap's linear destructive meld.
+
+         Activate (Into);
+         Activate (From);
+         Interval.Meld (Into.Base, From.Base);
+         Clear (From);
+      end if;
+   end Meld;
 
    -----------------
    -- Extract_Min --
@@ -372,41 +380,27 @@ package body Heaps.Open is
 
    procedure Extract_Min (H : in out Heap; K : out Key_Type) is
    begin
-      case H.Mode is
-         when Buffer =>
-            Extract_Buffer (H, True, K);
+      if H.Mode = Initial then
+         if H.Staged_Last <= Small_Limit then
+            Remove_Staged (H, H.Staged_Min, K);
+            return;
+         else
+            Build_Base (H);
+         end if;
+      end if;
 
-         when Probe_Min | Probe_Max =>
-            Radix_Sort (H);
-            K := H.Keys (H.First);
-            if H.Count > 1 then
-               H.First := H.First + 1;
-            end if;
-            H.Count := H.Count - 1;
+      if H.Base.Last = 0 then
+         Interval.Extract_Min (H.Pending, K);
+      elsif H.Pending.Last = 0
+        or else Interval.Peek_Min (H.Base) <= Interval.Peek_Min (H.Pending)
+      then
+         Interval.Extract_Min (H.Base, K);
+      else
+         Interval.Extract_Min (H.Pending, K);
+      end if;
 
-         when Min_Heap =>
-            Extract_Min_Heap (H, K);
-
-         when Max_Heap =>
-            Radix_Sort (H);
-            K := H.Keys (H.First);
-            if H.Count > 1 then
-               H.First := H.First + 1;
-            end if;
-            H.Count := H.Count - 1;
-
-         when Sorted =>
-            K := H.Keys (H.First);
-            if H.Count > 1 then
-               H.First := H.First + 1;
-            end if;
-            H.Count := H.Count - 1;
-      end case;
-
-      if H.Count = 0 then
-         H.First := 1;
-         H.Last := 0;
-         H.Mode := Buffer;
+      if H.Base.Last = 0 and then H.Pending.Last = 0 then
+         H.Mode := Initial;
       end if;
    end Extract_Min;
 
@@ -416,35 +410,27 @@ package body Heaps.Open is
 
    procedure Extract_Max (H : in out Heap; K : out Key_Type) is
    begin
-      case H.Mode is
-         when Buffer =>
-            Extract_Buffer (H, False, K);
+      if H.Mode = Initial then
+         if H.Staged_Last <= Small_Limit then
+            Remove_Staged (H, H.Staged_Max, K);
+            return;
+         else
+            Build_Base (H);
+         end if;
+      end if;
 
-         when Probe_Min | Probe_Max =>
-            Radix_Sort (H);
-            K := H.Keys (H.Last);
-            H.Last := H.Last - 1;
-            H.Count := H.Count - 1;
+      if H.Base.Last = 0 then
+         Interval.Extract_Max (H.Pending, K);
+      elsif H.Pending.Last = 0
+        or else Interval.Peek_Max (H.Base) >= Interval.Peek_Max (H.Pending)
+      then
+         Interval.Extract_Max (H.Base, K);
+      else
+         Interval.Extract_Max (H.Pending, K);
+      end if;
 
-         when Max_Heap =>
-            Extract_Max_Heap (H, K);
-
-         when Min_Heap =>
-            Radix_Sort (H);
-            K := H.Keys (H.Last);
-            H.Last := H.Last - 1;
-            H.Count := H.Count - 1;
-
-         when Sorted =>
-            K := H.Keys (H.Last);
-            H.Last := H.Last - 1;
-            H.Count := H.Count - 1;
-      end case;
-
-      if H.Count = 0 then
-         H.First := 1;
-         H.Last := 0;
-         H.Mode := Buffer;
+      if H.Base.Last = 0 and then H.Pending.Last = 0 then
+         H.Mode := Initial;
       end if;
    end Extract_Max;
 

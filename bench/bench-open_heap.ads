@@ -3,11 +3,13 @@
 --
 
 --  Benchmark adapter for the unrestricted Heaps.Open priority queue. The
---  implementation adapts to operation history and uses extra storage, but
---  does not inspect scenario names, generator state or future operations.
+--  implementation may use facilities outside SPARK and adapt to current size
+--  and representation, but is independent of benchmark scenarios, generator
+--  state and key patterns.
 
 with Bench.Driver;
 with Bench.Deque_Driver;
+with Bench.Meld_Driver;
 
 package Bench.Open_Heap is
 
@@ -19,16 +21,28 @@ package Bench.Open_Heap is
    function Size return Natural;
 
    package Runner is new Bench.Driver
-     (Heap_Name   => "open-adaptive",
+     (Heap_Name   => "open-buffered",
       Reset       => Reset,
       Insert      => Insert,
       Extract_Min => Extract_Min);
 
    package Deque_Runner is new Bench.Deque_Driver
-     (Heap_Name   => "open-adaptive",
+     (Heap_Name   => "open-buffered",
       Reset       => Reset,
       Insert      => Insert,
       Extract_Min => Extract_Min,
       Extract_Max => Extract_Max);
+
+   procedure Meld_Reset;
+   procedure Meld_Insert (Which : Natural; K : Key_Type);
+   procedure Meld_Meld (Which : Positive);
+   procedure Meld_Extract_Min (K : out Key_Type);
+
+   package Meld_Runner is new Bench.Meld_Driver
+     (Heap_Name   => "open-buffered",
+      Reset       => Meld_Reset,
+      Insert      => Meld_Insert,
+      Meld        => Meld_Meld,
+      Extract_Min => Meld_Extract_Min);
 
 end Bench.Open_Heap;

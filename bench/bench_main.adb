@@ -64,6 +64,7 @@ begin
    Bench.Weak_Heap.Meld_Runner.Run (Sizes);
    Bench.Min_Max_Heap.Meld_Runner.Run (Sizes);
    Bench.Interval_Heap.Meld_Runner.Run (Sizes);
+   Bench.Open_Heap.Meld_Runner.Run (Sizes);
    Bench.Block_Min_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Beap_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
