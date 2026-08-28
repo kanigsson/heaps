@@ -15,7 +15,6 @@ with Heaps.Binary;
 with Heaps.Block_Min;
 with Heaps.Dary;
 with Heaps.Interval;
-with Heaps.Leftist;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
 with Heaps.Sorted;
@@ -106,66 +105,6 @@ procedure Heaps_Test is
          Prev := K;
       end loop;
    end Test_Beap_Churn;
-
-   procedure Test_Leftist (N : Positive);
-   procedure Test_Leftist (N : Positive) is
-      H     : Heaps.Leftist.Heap (Extended_Index (N));
-      State : Long_Long_Integer := 987_654_321;
-      K     : Key_Type;
-      Prev  : Key_Type := Key_Type'First;
-      Sum   : Long_Long_Integer := 0;
-      Back  : Long_Long_Integer := 0;
-   begin
-      for I in 1 .. N loop
-         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
-         K := Key_Type (State mod 100_000);
-         Sum := Sum + Long_Long_Integer (K);
-         Heaps.Leftist.Insert (H, K);
-         Check (Heaps.Leftist.Size (H) = I, "leftist: size after insert");
-      end loop;
-
-      for I in 1 .. N loop
-         Check (Heaps.Leftist.Peek_Min (H) = Heaps.Leftist.Min_Of (H),
-                "leftist: peek agrees with the array minimum");
-         Heaps.Leftist.Extract_Min (H, K);
-         Check (K >= Prev, "leftist: keys come out in non-decreasing order");
-         Prev := K;
-         Back := Back + Long_Long_Integer (K);
-      end loop;
-
-      Check (Heaps.Leftist.Is_Empty (H), "leftist: empty after draining");
-      Check (Sum = Back, "leftist: nothing lost on the way");
-   end Test_Leftist;
-
-   procedure Test_Leftist_Churn (N : Positive);
-   procedure Test_Leftist_Churn (N : Positive) is
-      --  Alternating an extraction and an insertion keeps sending the last
-      --  node of the pool into the hole the root leaves behind, which is
-      --  where a stale link would show up.
-      H     : Heaps.Leftist.Heap (Extended_Index (N));
-      State : Long_Long_Integer := 24_680;
-      K     : Key_Type;
-      Prev  : Key_Type := Key_Type'First;
-   begin
-      for I in 1 .. N loop
-         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
-         Heaps.Leftist.Insert (H, Key_Type (State mod 1_000));
-      end loop;
-
-      for I in 1 .. 4 * N loop
-         Heaps.Leftist.Extract_Min (H, K);
-         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
-         Heaps.Leftist.Insert (H, Key_Type (State mod 1_000));
-         Check (Heaps.Leftist.Peek_Min (H) = Heaps.Leftist.Min_Of (H),
-                "leftist: churn keeps the smallest key on top");
-      end loop;
-
-      for I in 1 .. N loop
-         Heaps.Leftist.Extract_Min (H, K);
-         Check (K >= Prev, "leftist: churned heap still drains in order");
-         Prev := K;
-      end loop;
-   end Test_Leftist_Churn;
 
    procedure Test_Weak (N : Positive);
    procedure Test_Weak (N : Positive) is
@@ -510,6 +449,8 @@ procedure Heaps_Test is
    --  receiving a tiny one and the reverse -- are covered as well as the
    --  balanced one.
 
+   package Arena renames Heaps.Leftist_Pool;
+
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
       Total : constant Natural := N + M;
@@ -538,8 +479,8 @@ procedure Heaps_Test is
       P_From : Heaps.Beap.Heap (Extended_Index (Total));
       S_Into : Heaps.Sorted.Heap (Extended_Index (Total));
       S_From : Heaps.Sorted.Heap (Extended_Index (Total));
-      L_Into : Heaps.Leftist.Heap (Extended_Index (Total));
-      L_From : Heaps.Leftist.Heap (Extended_Index (Total));
+      L_Into : Arena.Tree := 0;
+      L_From : Arena.Tree := 0;
 
       Oracle : array (1 .. Total) of Key_Type;
       Filled : Natural := 0;
@@ -578,7 +519,7 @@ procedure Heaps_Test is
                Heaps.Interval.Insert (V_Into, K);
                Heaps.Beap.Insert (P_Into, K);
                Heaps.Sorted.Insert (S_Into, K);
-               Heaps.Leftist.Insert (L_Into, K);
+               Arena.Insert (L_Into, K);
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
@@ -589,11 +530,16 @@ procedure Heaps_Test is
                Heaps.Interval.Insert (V_From, K);
                Heaps.Beap.Insert (P_From, K);
                Heaps.Sorted.Insert (S_From, K);
-               Heaps.Leftist.Insert (L_From, K);
+               Arena.Insert (L_From, K);
             end if;
          end loop;
       end Feed;
    begin
+      --  The leftist pair are trees of the shared pool, so this test has to
+      --  start from an arena of its own like every other test that uses it.
+
+      Arena.Clear;
+
       Feed (N, True);
       Feed (M, False);
 
@@ -606,7 +552,7 @@ procedure Heaps_Test is
       Heaps.Interval.Meld (V_Into, V_From);
       Heaps.Beap.Meld (P_Into, P_From);
       Heaps.Sorted.Meld (S_Into, S_From);
-      Heaps.Leftist.Meld (L_Into, L_From);
+      Arena.Meld (L_Into, L_From);
 
       Check (Heaps.Unsorted.Size (A_Into) = Total,
              "meld: unsorted size is the sum");
@@ -637,9 +583,9 @@ procedure Heaps_Test is
       Check (Heaps.Sorted.Size (S_Into) = Total,
              "meld: sorted size is the sum");
       Check (Heaps.Sorted.Is_Empty (S_From), "meld: sorted source is emptied");
-      Check (Heaps.Leftist.Size (L_Into) = Total,
+      Check (Arena.Size_Of (L_Into) = Total,
              "meld: leftist size is the sum");
-      Check (Heaps.Leftist.Is_Empty (L_From),
+      Check (Arena.Is_Empty (L_From),
              "meld: leftist source is emptied");
 
       --  Sort the oracle so that the drain order can be compared against it
@@ -678,10 +624,6 @@ procedure Heaps_Test is
          Check (Heaps.Beap.Peek_Min (P_Into) = Heaps.Beap.Min_Of (P_Into),
                 "meld: beap peek agrees with the array minimum");
 
-         Check (Heaps.Leftist.Peek_Min (L_Into)
-                = Heaps.Leftist.Min_Of (L_Into),
-                "meld: leftist peek agrees with the array minimum");
-
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
          Heaps.Dary.Extract_Min (D_Into, D_Key);
@@ -691,7 +633,7 @@ procedure Heaps_Test is
          Heaps.Interval.Extract_Min (V_Into, V_Key);
          Heaps.Beap.Extract_Min (P_Into, P_Key);
          Heaps.Sorted.Extract_Min (S_Into, S_Key);
-         Heaps.Leftist.Extract_Min (L_Into, L_Key);
+         Arena.Extract_Min (L_Into, L_Key);
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
@@ -719,7 +661,7 @@ procedure Heaps_Test is
       Check (Heaps.Beap.Is_Empty (P_Into), "meld: beap empty after draining");
       Check (Heaps.Sorted.Is_Empty (S_Into),
              "meld: sorted empty after draining");
-      Check (Heaps.Leftist.Is_Empty (L_Into),
+      Check (Arena.Is_Empty (L_Into),
              "meld: leftist empty after draining");
    end Test_Meld;
 
@@ -740,8 +682,6 @@ procedure Heaps_Test is
    --  The arena has no Min_Of either. With several trees in one array there is
    --  no range of slots holding a given tree's keys, so the oracle for "the
    --  smallest key still in T" has to be kept by the test.
-
-   package Arena renames Heaps.Leftist_Pool;
 
    procedure Test_Arena (N : Positive);
    procedure Test_Arena (N : Positive) is
@@ -1046,7 +986,6 @@ begin
    for N in 1 .. 200 loop
       Test_Beap_Churn (N);
       Test_Weak_Churn (N);
-      Test_Leftist_Churn (N);
    end loop;
 
    --  The arena churns for a different reason, and over fewer sizes. What the
@@ -1064,7 +1003,6 @@ begin
       Test_Binary (N);
       Test_Block_Min (N);
       Test_Weak (N);
-      Test_Leftist (N);
       Test_Arena (N);
       Test_Beap (N);
       Test_Min_Max (N);

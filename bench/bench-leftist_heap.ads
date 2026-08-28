@@ -2,10 +2,13 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  Benchmark adapter for Heaps.Leftist.
+--  Benchmark adapter for Heaps.Leftist_Pool, an instance of the leftist arena.
 --
---  The adapter owns the heap object and exposes the operations as parameterless
---  procedures, which is all Bench.Driver asks for.
+--  A heap here is a tree of the shared pool, named by the index of its root,
+--  so the adapter holds root indices where the other adapters hold heap
+--  objects. The single-heap scenarios use one such tree; the meld scenarios
+--  use an accumulator and several operands, all of them trees of the same
+--  pool, which is what lets a meld be a splice.
 
 with Bench.Driver;
 with Bench.Meld_Driver;
@@ -26,9 +29,11 @@ package Bench.Leftist_Heap is
    -- Meld --
    ----------
 
-   --  A second set of heaps, kept apart from the one the single-heap
+   --  A second set of trees, kept apart from the one the single-heap
    --  scenarios use: the meld workload needs an accumulator and several
-   --  operands live at once.
+   --  operands live at once. The two sets never overlap in time, because
+   --  either Reset clears the arena or Meld_Reset does, and each invalidates
+   --  the other's names.
 
    procedure Meld_Reset;
    procedure Meld_Insert (Which : Natural; K : Key_Type);

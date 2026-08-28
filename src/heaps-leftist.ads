@@ -2,48 +2,61 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  Leftist heap held in an array of nodes linked by indices.
+--  Leftist heaps sharing one arena.
 --
---  This is the first heap in the collection whose tree is explicit. The
---  earlier ones derive the shape of the tree from the position of a key in
---  the array and are therefore always perfectly balanced; a leftist heap is
---  deliberately unbalanced, so it has to say where its children are.
+--  The pool is package state and a heap is a root inside it, so several heaps
+--  share one array and a meld is a splice and nothing else. The price is that
+--  a heap is not a first-class object: there is one arena per instantiation,
+--  no array of arenas and no passing one to a subprogram.
 --
---  Everything is built around one operation: merging two heaps. Insertion
---  merges a one-node heap into the heap, and extraction merges the two
---  subtrees of the root. Merging walks down the right spine of both heaps, so
---  what has to be kept small is that spine and nothing else. That is the
---  leftist invariant: writing Dist of a node for the number of steps from it
---  to the nearest empty slot, a node's left subtree has a Dist at least as
---  large as its right subtree's. A node of Dist d then has at least 2 ** d - 1
---  descendants, so the right spine of n nodes is at most log2 (n + 1) long,
---  and a merge is O(log n) whatever the tree looks like elsewhere.
+--  The alternative shape -- a Heap that bundles a node pool of its own with
+--  the assertion that the pool holds exactly one tree -- is what this unit
+--  used to sit beside, and it is not here any more. It makes melding two heaps
+--  expensive for a reason that no amount of care removes: the two operands
+--  live in two disjoint arrays, so one of them has to be copied into the other
+--  before its root can be spliced in, and that O(m) copy throws away the
+--  O(log n) the structure exists for. OBSERVATIONS.md has what the copy
+--  measured before the unit was dropped.
 --
---  Because there are no access types here, the nodes live in an array and
---  refer to each other by index, with 0 standing for the empty tree. Three
---  things make the pool tractable to reason about, and all three are stated
---  node by node rather than over the tree as a whole:
+--  For a collection of mergeable structures the arena is the right way round,
+--  since the k operands of a k-way meld are k trees in one arena rather than
+--  k arenas, and it is the shape the other explicit-tree heaps here should
+--  take. It is not the right shape for an explicit-tree structure that does
+--  not meld, which pays the loss of a first-class object for nothing.
 --
---    * every node carries the index of its parent, which makes it impossible
---      for two nodes to share a child -- a node has one parent, and the link
---      has to point back;
---    * every node carries the size of its subtree, which strictly decreases
---      from a node to either of its children and so rules out a cycle;
---    * the nodes in use are exactly the array slots 1 .. Count, which makes
---      allocation a bump of Count and leaves the multiset model of the heap
---      the same plain scan of a key prefix that the implicit heaps use.
---
---  Extraction removes the root, which is rarely the last slot, so the last
---  node is moved down into the hole it leaves and its three neighbours are
---  told about it. That is what keeps the used slots a prefix.
---
---  Verification level: silver, gold and platinum -- see README.md.
+--  A tree is named by the index of its root, and a root changes whenever the
+--  tree is operated on -- a merge returns one of its two operands as the new
+--  root -- so every operation takes its tree as `in out` and the caller keeps
+--  the updated name.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The model of a tree is *cached*, one multiset per node, rather than defined
+--  by recursion over the tree. That is the whole reason this unit's invariant
+--  can stay flat. A recursive model reads the entire
+--  pool, so every mutation owes a proof that the trees not being touched still
+--  have the model they had, and stating that means saying which nodes belong
+--  to which tree -- exactly the subtree-level reasoning that PROOF.md reports
+--  having avoided. A cached model is a field of a node, so a tree's model is a
+--  field of its root, and a mutation that leaves a root alone leaves its model
+--  alone for free.
+--
+--  The cache is maintained by one clause of Valid about one node and its two
+--  immediate children, which is the same shape as the clause that maintains
+--  Size, and it is maintained by the same three assignments. SPARK has no
+--  ghost record components and no ghost parameters of non-ghost subprograms
+--  (LRM 6.9(7)), so the cache cannot ride along inside the node or be passed
+--  in; ghost package state is the one place it can live, and it is erased at
+--  run time like every other ghost object here.
+
+--  The ghost model of these units -- a functional multiset -- cannot
+--  reasonably be evaluated at run time. Since the contracts are discharged by
+--  proof, run-time checking of them is redundant, so assertions are disabled
+--  here whatever the compilation switches say.
+
+--  Snap'Old appears inside the implications of the frame clauses, so it is
+--  formally "potentially unevaluated". It is a pure function of the arena and
+--  always well defined, which is exactly the case this pragma exists for.
+
+pragma Unevaluated_Use_Of_Old (Allow);
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -52,11 +65,186 @@ pragma Assertion_Policy (Ghost          => Ignore,
                          Loop_Invariant => Ignore);
 
 with Heaps.Key_Multisets;
-with Heaps.Models;
+
+generic
+   Capacity : Index;
+   --  The number of nodes the arena holds, shared by every tree in it
 
 package Heaps.Leftist with SPARK_Mode is
 
    use type Key_Multisets.Multiset;
+
+   subtype Tree is Extended_Index range 0 .. Capacity;
+   --  A tree of the arena, named by the index of its root. 0 is the empty
+   --  tree, and is a valid value of every operation that takes one.
+
+   subtype Slot is Tree range 1 .. Capacity;
+   --  A node of the arena. Naming the range as a subtype rather than asking
+   --  for it in a precondition is deliberate: these predicates appear as
+   --  hypotheses under an implication inside a quantifier, and PROOF.md
+   --  records that an expression function guarded by a precondition does not
+   --  unfold there. A subtype carries the same information with nothing to
+   --  discharge.
+
+   ---------------------------
+   -- Structural properties --
+   ---------------------------
+
+   --  The arena is package state, so a contract cannot pass "the arena before
+   --  the call" to a ghost function the way a heap held in a record would pass
+   --  H'Old. It needs a name for that state instead, and Snapshot is it: every
+   --  ghost property below reads one, and Snap names the current one. This is
+   --  not decoration -- 'Old may not be applied to an expression mentioning a
+   --  quantified variable, so `Model (U)'Old` inside a `for all U` is illegal
+   --  where `Model (Snap'Old, U)` is fine, and the frame clauses of this unit
+   --  are all of that shape.
+
+   type Snapshot is private with Ghost;
+
+   function Snap return Snapshot with Ghost;
+   --  The arena as it stands
+
+   function Valid (S : Snapshot) return Boolean with Ghost;
+   --  S is well formed: every node in use is a well formed leftist node whose
+   --  cached model agrees with its children's, and every node not in use is on
+   --  the free chain.
+
+   function In_Use (S : Snapshot; I : Slot) return Boolean with Ghost;
+   --  I holds a node of some tree
+
+   function Is_Root (S : Snapshot; T : Tree) return Boolean with Ghost;
+   --  T names a tree: either the empty tree, or a node in use with no parent
+
+   function Model (S : Snapshot; T : Tree) return Key_Multisets.Multiset
+     with Ghost;
+   --  The multiset of the keys held in T. This is a *lookup*, not a scan or a
+   --  recursion: the answer is the cache of T's root.
+
+   function Size_In (S : Snapshot; T : Tree) return Extended_Index with Ghost;
+   --  The number of nodes in T
+
+   function Room_In (S : Snapshot) return Extended_Index with Ghost;
+
+   function Is_Minimum (S : Snapshot; T : Tree; K : Key_Type) return Boolean
+     with Ghost;
+   --  K is a lower bound of every key held in T
+
+   --  Shorthands for the current state, which is what most contracts want
+
+   function Valid return Boolean is (Valid (Snap)) with Ghost;
+   function Is_Root (T : Tree) return Boolean is (Is_Root (Snap, T))
+     with Ghost;
+   function Model (T : Tree) return Key_Multisets.Multiset is
+     (Model (Snap, T)) with Ghost;
+
+   Nodes : constant Extended_Index := Capacity;
+   --  How many nodes the arena holds altogether, free and in use. A generic
+   --  formal object is not visible from outside its instance, so a client with
+   --  no other way to name the arena's size cannot compare Room against it
+   --  without this.
+
+   function Room return Extended_Index;
+   --  How many more keys the arena can hold, over all its trees together
+
+   function Size_Of (T : Tree) return Extended_Index
+     with Pre  => Valid and then Is_Root (T),
+          Post => (Size_Of'Result = 0) = (T = 0);
+
+   function Is_Empty (T : Tree) return Boolean is (T = 0);
+
+   ----------------
+   -- Operations --
+   ----------------
+
+   procedure Clear
+     with Post => Valid and Room = Capacity;
+   --  Empty the arena. Every tree in it ceases to exist, so every name the
+   --  caller holds becomes stale; this is the one operation that invalidates
+   --  names it was not given.
+
+   function Peek_Min (T : Tree) return Key_Type
+     with Pre => Valid and then Is_Root (T) and then T /= 0;
+
+   procedure Insert (T : in out Tree; K : Key_Type)
+     with Pre  => Valid
+                  and then Is_Root (T)
+                  and then Room >= 1
+                  and then Size_Of (T) < Capacity,
+          Post => Valid
+                  and Is_Root (T)
+                  and Room = Room'Old - 1
+                  and Size_In (Snap, T) = Size_In (Snap'Old, T'Old) + 1
+                  and Model (Snap, T)
+                      = Key_Multisets.Add (Model (Snap'Old, T'Old), K)
+
+                  --  The other trees of the arena are untouched. With a
+                  --  cached model this is one equality per root rather than a
+                  --  statement about which nodes belong to which tree.
+
+                  and (for all U in Tree =>
+                         (if U /= T'Old and then Is_Root (Snap'Old, U)
+                          then Is_Root (Snap, U)
+                               and then Model (Snap, U) = Model (Snap'Old, U)));
+
+   procedure Extract_Min (T : in out Tree; K : out Key_Type)
+     with Pre  => Valid
+                  and then Is_Root (T)
+                  and then T /= 0
+                  and then Room < Capacity,
+          Post => Valid
+                  and Is_Root (T)
+                  and Room = Room'Old + 1
+                  and K = Peek_Min (T)'Old
+                  and Is_Minimum (Snap'Old, T'Old, K)
+                  and Model (Snap'Old, T'Old)
+                      = Key_Multisets.Add (Model (Snap, T), K)
+                  and (for all U in Tree =>
+                         (if U /= T'Old and then Is_Root (Snap'Old, U)
+                          then Is_Root (Snap, U)
+                               and then Model (Snap, U) = Model (Snap'Old, U)));
+
+   --  Room < Capacity says the arena is not wholly empty, which T /= 0 makes
+   --  obvious and the flat invariant cannot show. Chain_At and Chain_Pos are
+   --  inverses, so the free nodes are in bijection with 1 .. Room and a node
+   --  in use leaves at most Capacity - 1 of them -- but that is pigeonhole,
+   --  and counting the image of an injection is the argument this invariant
+   --  is built to avoid. It is asked of the caller for the same reason the
+   --  size bound on Meld is.
+
+   procedure Meld (T : in out Tree; U : in out Tree)
+     with Pre  => Valid
+                  and then Is_Root (T)
+                  and then Is_Root (U)
+                  and then (if T /= 0 and then U /= 0 then T /= U)
+                  and then Size_Of (T) + Size_Of (U) <= Capacity,
+          Post => Valid
+                  and Is_Root (T)
+                  and U = 0
+                  and Room = Room'Old
+                  and Model (Snap, T)
+                      = Model (Snap'Old, T'Old) + Model (Snap'Old, U'Old)
+                  and (for all W in Tree =>
+                         (if W /= T'Old
+                             and then W /= U'Old
+                             and then Is_Root (Snap'Old, W)
+                          then Is_Root (Snap, W)
+                               and then Model (Snap, W) = Model (Snap'Old, W)));
+   --  The size bound is asked of the caller rather than derived. That two
+   --  distinct trees of an arena of Capacity nodes hold at most Capacity keys
+   --  between them is true, but it is a counting argument about their nodes
+   --  being disjoint, and the invariant here is deliberately flat: it relates
+   --  a node to its immediate neighbours and says nothing about which nodes
+   --  belong to which tree. PROOF.md reaches the same conclusion about the
+   --  same arithmetic and gives the same answer -- carry the bound in the
+   --  contract, where it is pure arithmetic, rather than derive it from the
+   --  invariant. A caller always knows how many keys it put in.
+   --
+   --  Destructive meld, and the point of the unit: T receives every key of U,
+   --  which ceases to exist. No node is allocated, freed or copied -- Room is
+   --  unchanged -- and the work is a walk down the two right spines, so this
+   --  is O(log n) rather than the O(m) a heap owning its own pool must pay.
+
+private
 
    type Link is record
       Left   : Extended_Index := 0;
@@ -65,163 +253,218 @@ package Heaps.Leftist with SPARK_Mode is
       Size   : Extended_Index := 0;
       Dist   : Extended_Index := 0;
    end record;
-   --  The tree structure of one node, kept apart from its key so that the
-   --  keys stay a plain Key_Array and can be modelled like every other heap's
+   --  The tree structure of one node, kept apart from its key. For a node on
+   --  the free chain, Left is the next free node and the rest is irrelevant.
 
    type Link_Array is array (Index range <>) of Link;
 
-   type Heap (Capacity : Extended_Index) is record
-      Count : Extended_Index := 0;
-      Root  : Extended_Index := 0;
-      Keys  : Key_Array (1 .. Capacity);
-      Links : Link_Array (1 .. Capacity);
-   end record
-     with Predicate => Count <= Capacity;
-   --  A heap holds Count keys, in the slots 1 .. Count. Which slot holds
-   --  which key is up to the structure; the slots beyond Count are free.
-
-   ---------------------------
-   -- Structural properties --
-   ---------------------------
-
-   function Size_Of (H : Heap; I : Extended_Index) return Extended_Index is
-     (if I = 0 then 0 else H.Links (I).Size)
-     with Pre => I <= H.Capacity;
-   --  Number of nodes in the subtree of I, and zero for the empty tree
-
-   function Dist_Of (H : Heap; I : Extended_Index) return Extended_Index is
-     (if I = 0 then 0 else H.Links (I).Dist)
-     with Pre => I <= H.Capacity;
-   --  Steps from I down to the nearest empty slot, and zero for the empty
-   --  tree. A merge follows the smaller of these, which is what bounds it.
-
-   function Well_Linked (H : Heap) return Boolean is
-     (for all I in 1 .. H.Count =>
-        H.Links (I).Left in 0 .. H.Count
-        and then H.Links (I).Right in 0 .. H.Count
-        and then H.Links (I).Parent in 0 .. H.Count
-        and then H.Links (I).Size
-                 = 1 + Size_Of (H, H.Links (I).Left)
-                     + Size_Of (H, H.Links (I).Right)
-        and then H.Links (I).Dist = 1 + Dist_Of (H, H.Links (I).Right)
-        and then H.Links (I).Dist <= H.Links (I).Size
-        and then Dist_Of (H, H.Links (I).Left)
-                 >= Dist_Of (H, H.Links (I).Right)
-        and then (if H.Links (I).Left /= 0
-                  then H.Links (H.Links (I).Left).Parent = I
-                       and then H.Keys (I) <= H.Keys (H.Links (I).Left)
-                       and then H.Links (I).Left /= H.Links (I).Right)
-        and then (if H.Links (I).Right /= 0
-                  then H.Links (H.Links (I).Right).Parent = I
-                       and then H.Keys (I) <= H.Keys (H.Links (I).Right))
-        and then (if H.Links (I).Parent /= 0
-                  then H.Links (H.Links (I).Parent).Left = I
-                       or else H.Links (H.Links (I).Parent).Right = I))
+   type Model_Array is array (Index range <>) of Key_Multisets.Multiset
      with Ghost;
-   --  The pool holds a forest: every link points at a used node, a child
-   --  points back at its parent and holds a larger key and a smaller subtree,
-   --  and the leftist condition holds. Every clause is about one node and its
-   --  immediate neighbours; nothing here is a statement about a subtree, and
-   --  nothing says how many trees there are, which is what lets a merge take
-   --  the forest apart and put it back together again.
 
-   function Is_Heap (H : Heap) return Boolean is
-     (Well_Linked (H)
-      and then (if H.Count = 0 then H.Root = 0 else H.Root in 1 .. H.Count)
-      and then (if H.Root /= 0
-                then H.Links (H.Root).Parent = 0
-                     and then H.Links (H.Root).Size = H.Count)
-      and then (for all I in 1 .. H.Count =>
-                  (if I /= H.Root then H.Links (I).Parent /= 0)))
+   type Chain_Array is array (Index range <>) of Extended_Index with Ghost;
+
+   type Snapshot is record
+      Keys       : Key_Array (1 .. Capacity);
+      Links      : Link_Array (1 .. Capacity);
+      Free       : Extended_Index := 0;
+      Free_Count : Extended_Index := 0;
+      Sub        : Model_Array (1 .. Capacity);
+      Chain_Pos  : Chain_Array (1 .. Capacity);
+      Chain_At   : Chain_Array (1 .. Capacity);
+   end record;
+   --  A whole arena as one value, for contracts to compare two states. The
+   --  type is ghost, so the real state cannot be an object of it -- SPARK has
+   --  no ghost components, so a non-ghost record could not hold Sub and
+   --  Chain_Pos without making them real. The state is therefore kept as
+   --  separate variables and Snap assembles them.
+
+   --  Real state
+
+   Keys       : Key_Array (1 .. Capacity);
+   Links      : Link_Array (1 .. Capacity);
+   Free       : Extended_Index := 0;
+   Free_Count : Extended_Index := 0;
+
+   --  Ghost state, erased at run time
+
+   Sub : Model_Array (1 .. Capacity) with Ghost;
+   --  Sub (I) is the multiset of the keys in the subtree rooted at I. It is
+   --  the cache that lets a tree's model be a lookup, and it is maintained
+   --  wherever Size is.
+
+   Chain_At : Chain_Array (1 .. Capacity) with Ghost;
+   --  The inverse of Chain_Pos: Chain_At (K) is the node at position K. Two
+   --  arrays that are inverses of one another give injectivity in one step,
+   --  where stating it directly needs a quantifier over pairs of nodes -- and
+   --  Valid is the hypothesis of nearly every proof in the unit, so an O(n^2)
+   --  clause in it is paid for everywhere.
+
+   Chain_Pos : Chain_Array (1 .. Capacity) with Ghost;
+   --  0 if the node is in use, otherwise its one-based position along the free
+   --  chain counting from the far end, so that the head holds Free_Count. It
+   --  plays for the free chain exactly the part Size plays for a tree: a value
+   --  that strictly decreases from a node to the next rules out a cycle
+   --  locally, with no recursive definition and no induction.
+
+   function Snap return Snapshot is
+     ((Keys       => Keys,
+       Links      => Links,
+       Free       => Free,
+       Free_Count => Free_Count,
+       Sub        => Sub,
+       Chain_Pos  => Chain_Pos,
+       Chain_At   => Chain_At));
+
+   function In_Use (S : Snapshot; I : Slot) return Boolean is
+     (S.Chain_Pos (I) = 0);
+
+   function Sub_Of (S : Snapshot; I : Tree)
+                    return Key_Multisets.Multiset
+   is
+     (if I = 0 then Key_Multisets.Empty_Multiset else S.Sub (I))
      with Ghost;
-   --  The forest is a single tree, rooted at Root: the only node without a
-   --  parent is the root, and its subtree is the whole of the pool in use.
 
-   function Is_Minimum (H : Heap; K : Key_Type) return Boolean is
-     (for all I in 1 .. H.Count => K <= H.Keys (I))
+   function Size_Of_Node (S : Snapshot; I : Tree)
+                          return Extended_Index
+   is
+     (if I = 0 then 0 else S.Links (I).Size)
      with Ghost;
-   --  K is a lower bound of every key currently stored in H
 
-   -----------
-   -- Model --
-   -----------
-
-   function Model (H : Heap) return Key_Multisets.Multiset is
-     (Models.Occurrences (H.Keys, H.Count))
+   function Dist_Of (S : Snapshot; I : Tree) return Extended_Index is
+     (if I = 0 then 0 else S.Links (I).Dist)
      with Ghost;
-   --  The heap seen as what it really is: a bag of keys. Keeping the used
-   --  slots a prefix of the array is what lets the model of a linked
-   --  structure be the same scan the implicit heaps use.
 
-   ----------------
-   -- Operations --
-   ----------------
+   --  Accessors for the current state. The two structural ones are not ghost:
+   --  a merge chooses which subtree to hang where by comparing Dist, so this
+   --  is real code and not only a proof term.
 
-   function Size (H : Heap) return Extended_Index is (H.Count);
+   function Size_Now (I : Tree) return Extended_Index is
+     (if I = 0 then 0 else Links (I).Size);
 
-   function Is_Empty (H : Heap) return Boolean is (H.Count = 0);
+   function Dist_Now (I : Tree) return Extended_Index is
+     (if I = 0 then 0 else Links (I).Dist);
 
-   function Is_Full (H : Heap) return Boolean is (H.Count = H.Capacity);
+   function Sub_Now (I : Tree) return Key_Multisets.Multiset is
+     (if I = 0 then Key_Multisets.Empty_Multiset else Sub (I))
+     with Ghost;
 
-   procedure Clear (H : in out Heap)
-     with Post => Is_Empty (H)
-                  and Is_Heap (H)
-                  and Key_Multisets.Is_Empty (Model (H));
+   function Node_In_Use (S : Snapshot; I : Slot) return Boolean is
+     (S.Links (I).Left in 0 .. Capacity
+      and then S.Links (I).Right in 0 .. Capacity
+      and then S.Links (I).Parent in 0 .. Capacity
+      and then (if S.Links (I).Left /= 0 then In_Use (S, S.Links (I).Left))
+      and then (if S.Links (I).Right /= 0 then In_Use (S, S.Links (I).Right))
+      and then (if S.Links (I).Parent /= 0 then In_Use (S, S.Links (I).Parent))
+      and then S.Links (I).Size
+               = 1 + Size_Of_Node (S, S.Links (I).Left)
+                   + Size_Of_Node (S, S.Links (I).Right)
+      and then S.Links (I).Dist = 1 + Dist_Of (S, S.Links (I).Right)
+      and then S.Links (I).Dist <= S.Links (I).Size
+      and then S.Links (I).Size <= Capacity
+      and then Dist_Of (S, S.Links (I).Left)
+               >= Dist_Of (S, S.Links (I).Right)
 
-   function Peek_Min (H : Heap) return Key_Type is (H.Keys (H.Root))
-     with Pre => not Is_Empty (H) and then Is_Heap (H);
-   --  Unlike an implicit heap, this one has to be told where its root is, so
-   --  the structural invariant is part of the precondition
+      --  The cached model of I is its two children's plus its own key. One
+      --  clause, one node, two children -- and it is what makes a tree's
+      --  model a field of its root rather than a recursion over its nodes.
 
-   function Min_Of (H : Heap) return Key_Type
-     with Pre  => not Is_Empty (H),
-          Post => Is_Minimum (H, Min_Of'Result)
-                  and then (for some I in 1 .. H.Count =>
-                              Min_Of'Result = H.Keys (I));
-   --  The minimum of the stored keys, found by a linear scan and without
-   --  assuming anything about the structure. It is a proved oracle: a test can
-   --  compare it against Peek_Min without the comparison itself being a
-   --  restatement of the heap property.
+      and then S.Sub (I)
+               = Key_Multisets.Add
+                   (Key_Multisets.Sum (Sub_Of (S, S.Links (I).Left),
+                                       Sub_Of (S, S.Links (I).Right)),
+                    S.Keys (I))
 
-   procedure Lemma_Root_Is_Minimum (H : Heap)
-     with Ghost,
-          Pre  => not Is_Empty (H) and then Is_Heap (H),
-          Post => Is_Minimum (H, Peek_Min (H));
-   --  The ordering only relates a node to its parent; that the root is a
-   --  lower bound of the whole pool follows by induction along the chains of
-   --  parent links, which all end at it.
+      --  And every key of I's subtree is at least I's own. Because the model
+      --  is cached this is a clause about one node, so "the root is the
+      --  minimum" needs no walk up the parent links: it falls out of the
+      --  invariant at the root itself.
 
-   procedure Insert (H : in out Heap; K : Key_Type)
-     with Pre  => not Is_Full (H) and then Is_Heap (H),
-          Post => Is_Heap (H)
-                  and Size (H) = Size (H)'Old + 1
-                  and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
+      and then (for all E of S.Sub (I) => S.Keys (I) <= E)
 
-   procedure Meld (Into : in out Heap; From : in out Heap)
-     with Pre  => Is_Heap (Into)
-                  and then Is_Heap (From)
-                  and then Size (From) <= Into.Capacity - Size (Into),
-          Post => Is_Heap (Into)
-                  and Size (Into) = Size (Into)'Old + Size (From)'Old
-                  and Is_Empty (From)
-                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
-   --  Destructive meld: Into receives every key of From, which is left empty.
-   --
-   --  A heap here owns its pool, so the nodes of From are not where Into can
-   --  reach them: they are copied into the free slots at the end of Into's
-   --  pool, shifted by the number of slots already in use, and the two roots
-   --  are then merged. The merge is the O(log n) splice a leftist heap exists
-   --  for, but the copy in front of it is O(m), which is the whole cost of
-   --  keeping the pool private. Heaps.Leftist_Arena is the same tree with the
-   --  pool shared, where the copy disappears and the meld is the splice
-   --  alone.
+      and then (if S.Links (I).Left /= 0
+                then S.Links (S.Links (I).Left).Parent = I
+                     and then S.Keys (I) <= S.Keys (S.Links (I).Left)
+                     and then S.Links (I).Left /= S.Links (I).Right)
+      and then (if S.Links (I).Right /= 0
+                then S.Links (S.Links (I).Right).Parent = I
+                     and then S.Keys (I) <= S.Keys (S.Links (I).Right))
+      and then (if S.Links (I).Parent /= 0
+                then S.Links (S.Links (I).Parent).Left = I
+                     or else S.Links (S.Links (I).Parent).Right = I))
+     with Ghost;
+   --  Everything asked of a node that holds a key. Every clause is about this
+   --  node and its immediate neighbours; nothing here is a statement about a
+   --  subtree, and nothing says how many trees the arena holds, which is what
+   --  lets a merge take the forest apart and put it back together.
 
-   procedure Extract_Min (H : in out Heap; K : out Key_Type)
-     with Pre  => not Is_Empty (H) and then Is_Heap (H),
-          Post => Is_Heap (H)
-                  and Size (H) = Size (H)'Old - 1
-                  and K = Peek_Min (H)'Old
-                  and Is_Minimum (H'Old, K)
-                  and Model (H)'Old = Key_Multisets.Add (Model (H), K);
+   function Node_Free (S : Snapshot; I : Slot) return Boolean is
+     (S.Links (I).Left in 0 .. Capacity
+      and then S.Chain_Pos (I) in 1 .. Capacity
+      and then S.Chain_Pos (I) <= S.Free_Count
+      and then S.Chain_At (S.Chain_Pos (I)) = I
+      and then (if S.Chain_Pos (I) = 1
+                then S.Links (I).Left = 0
+                else S.Links (I).Left /= 0
+                     and then S.Chain_Pos (S.Links (I).Left)
+                              = S.Chain_Pos (I) - 1))
+     with Ghost;
+   --  Everything asked of a node on the free chain: it is at some position
+   --  along it, and the node it points at is one step nearer the far end.
+
+   function Chain_Sound (S : Snapshot) return Boolean is
+     (S.Free in 0 .. Capacity
+      and then S.Free_Count <= Capacity
+      and then (S.Free = 0) = (S.Free_Count = 0)
+      and then (if S.Free /= 0 then S.Chain_Pos (S.Free) = S.Free_Count)
+
+      --  Chain_At and Chain_Pos are inverses over the chain, which is what
+      --  makes positions unique: two free nodes at the same position are both
+      --  Chain_At of it, and so are the same node. The head is therefore the
+      --  only node at the far end, and popping it leaves every other position
+      --  in range.
+
+      and then (for all K in 1 .. Capacity =>
+                  (if K <= S.Free_Count
+                   then S.Chain_At (K) in 1 .. Capacity
+                        and then S.Chain_Pos (S.Chain_At (K)) = K)))
+     with Ghost;
+
+   function Nodes_Sound (S : Snapshot) return Boolean is
+     (for all I in 1 .. Capacity =>
+        (if In_Use (S, I) then Node_In_Use (S, I) else Node_Free (S, I)))
+     with Ghost;
+
+   function Valid (S : Snapshot) return Boolean is
+     (Chain_Sound (S) and then Nodes_Sound (S));
+   --  Split in two so that establishing it is two moderate goals rather than
+   --  one large one. Neither half carries a precondition: PROOF.md records
+   --  that factoring a predicate into named pieces *with* preconditions made
+   --  a proof dramatically worse, because the defining axiom of a guarded
+   --  expression function does not unfold where the guard cannot be
+   --  rederived. Every bound these need is stated inside them.
+
+   --  Every bound a clause needs for its own indexing is stated in that
+   --  clause. Free_Count <= Capacity is a separate conjunct and is not
+   --  available inside one, so a position is bounded by Capacity there and
+   --  compared with Free_Count separately.
+
+   function Is_Root (S : Snapshot; T : Tree) return Boolean is
+     (T = 0 or else (In_Use (S, T) and then S.Links (T).Parent = 0));
+
+   function Model (S : Snapshot; T : Tree) return Key_Multisets.Multiset is
+     (Sub_Of (S, T));
+
+   function Size_In (S : Snapshot; T : Tree) return Extended_Index is
+     (Size_Of_Node (S, T));
+
+   function Room_In (S : Snapshot) return Extended_Index is (S.Free_Count);
+
+   function Room return Extended_Index is (Free_Count);
+
+   function Is_Minimum (S : Snapshot; T : Tree; K : Key_Type) return Boolean is
+     (for all E of Sub_Of (S, T) => K <= E);
+   --  Stated on the multiset rather than on the array: with several trees in
+   --  one arena, "every key of T" is a statement about T's model and not
+   --  about a range of slots.
 
 end Heaps.Leftist;

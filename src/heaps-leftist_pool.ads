@@ -29,6 +29,6 @@ pragma Assertion_Policy (Ghost          => Ignore,
                          Assert         => Ignore,
                          Loop_Invariant => Ignore);
 
-with Heaps.Leftist_Arena;
+with Heaps.Leftist;
 
-package Heaps.Leftist_Pool is new Heaps.Leftist_Arena (Capacity => 2 ** 20);
+package Heaps.Leftist_Pool is new Heaps.Leftist (Capacity => 2 ** 20);

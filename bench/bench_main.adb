@@ -14,7 +14,6 @@ with Bench.Dary_4;
 with Bench.Dary_8;
 with Bench.Dary_16;
 with Bench.Interval_Heap;
-with Bench.Leftist_Arena;
 with Bench.Leftist_Heap;
 with Bench.Min_Max_Heap;
 with Bench.Open_Heap;
@@ -68,7 +67,6 @@ begin
    Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
    Bench.Sorted_Heap.Meld_Runner.Run (Baseline_Sizes);
    Bench.Leftist_Heap.Meld_Runner.Run (Sizes);
-   Bench.Leftist_Arena.Meld_Runner.Run (Sizes);
 
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
    Bench.Interval_Heap.Deque_Runner.Run (Sizes);

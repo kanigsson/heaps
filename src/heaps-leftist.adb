@@ -2,11 +2,7 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+pragma Unevaluated_Use_Of_Old (Allow);
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -14,80 +10,331 @@ pragma Assertion_Policy (Ghost          => Ignore,
                          Assert         => Ignore,
                          Loop_Invariant => Ignore);
 
---  Graft states its model postcondition behind an and then, so the 'Old in it
---  is potentially unevaluated.
-
-pragma Unevaluated_Use_Of_Old (Allow);
+with Heaps.Models;
 
 package body Heaps.Leftist with SPARK_Mode is
 
-   procedure Merge
-     (H : in out Heap; A, B : Extended_Index; R : out Extended_Index)
-     with Pre  => Well_Linked (H)
-                  and then A <= H.Count
-                  and then B <= H.Count
-                  and then (if A /= 0 then H.Links (A).Parent = 0)
-                  and then (if B /= 0 then H.Links (B).Parent = 0)
-                  and then (if A /= 0 and then B /= 0 then A /= B)
-                  and then Size_Of (H, A) + Size_Of (H, B) <= H.Count,
-          Post => Well_Linked (H)
-                  and then H.Count = H.Count'Old
-                  and then H.Keys = H.Keys'Old
-                  and then H.Root = H.Root'Old
-                  and then R <= H.Count
+   package KM renames Key_Multisets;
+
+   --------------------------
+   -- Allocation          --
+   --------------------------
+
+   procedure Allocate (I : out Slot; K : Key_Type)
+     with Pre  => Valid and then Room >= 1,
+          Post => Valid
+                  and then In_Use (Snap, I)
+                  and then Room = Room'Old - 1
+                  and then Keys (I) = K
+                  and then Sub (I) = KM.Add (KM.Empty_Multiset, K)
+                  and then Links (I).Left = 0
+                  and then Links (I).Right = 0
+                  and then Links (I).Parent = 0
+                  and then Links (I).Size = 1
+                  and then Links (I).Dist = 1
+
+                  --  Every node that was in use is untouched, model included
+
+                  and then (for all X in 1 .. Capacity =>
+                              (if In_Use (Snap'Old, X)
+                               then X /= I
+                                    and then In_Use (Snap, X)
+                                    and then Keys (X) = Snap'Old.Keys (X)
+                                    and then Links (X) = Snap'Old.Links (X)
+                                    and then Sub (X) = Snap'Old.Sub (X)));
+   --  Take the head of the free chain and hand it back as a one-node tree
+   --  holding K. The key goes in here rather than in the caller because a node
+   --  in use is required to carry a cached model that matches its key, so an
+   --  allocation that left the key unset would leave the arena invalid.
+
+   procedure Deallocate (I : Slot)
+     with Pre  => Valid
+                  and then Room < Capacity
+                  and then In_Use (Snap, I)
+                  and then Links (I).Left = 0
+                  and then Links (I).Right = 0
+                  and then Links (I).Parent = 0
+                  and then (for all X in 1 .. Capacity =>
+                              (if In_Use (Snap, X) and then X /= I
+                               then Links (X).Left /= I
+                                    and then Links (X).Right /= I
+                                    and then Links (X).Parent /= I)),
+          Post => Valid
+                  and then not In_Use (Snap, I)
+                  and then Room = Room'Old + 1
+                  and then Keys = Snap'Old.Keys
+                  and then (for all X in 1 .. Capacity =>
+                              (if In_Use (Snap'Old, X) and then X /= I
+                               then In_Use (Snap, X)
+                                    and then Links (X) = Snap'Old.Links (X)
+                                    and then Sub (X) = Snap'Old.Sub (X)));
+   --  Push a detached node back onto the free chain. It has to be detached
+   --  already -- no link anywhere may still name it -- which is what the
+   --  precondition asks for.
+
+   procedure Merge (A, B : Tree; R : out Tree)
+     with Pre  => Valid
+
+                  --  The subtree sizes have to fit in their type through the
+                  --  recursion. Carrying the bound in the contract rather than
+                  --  deriving it from the invariant is what keeps it pure
+                  --  arithmetic, as PROOF.md records for the same reason.
+
+                  and then Size_Now (A) + Size_Now (B) <= Capacity
+                  and then (if A /= 0
+                            then In_Use (Snap, A)
+                                 and then Links (A).Parent = 0)
+                  and then (if B /= 0
+                            then In_Use (Snap, B)
+                                 and then Links (B).Parent = 0)
+                  and then (if A /= 0 and then B /= 0 then A /= B),
+          Post => Valid
+                  and then Keys = Snap'Old.Keys
+                  and then Chain_Pos = Snap'Old.Chain_Pos
+                  and then Free = Snap'Old.Free
+                  and then Free_Count = Snap'Old.Free_Count
                   and then (if A = 0 then R = B
                             elsif B = 0 then R = A
                             else R = A or else R = B)
                   and then (if R /= 0
-                            then H.Links (R).Parent = 0
-                                 and then H.Links (R).Size
-                                          = Size_Of (H'Old, A)
-                                            + Size_Of (H'Old, B))
+                            then In_Use (Snap, R)
+                                 and then Links (R).Parent = 0
+                                 and then Links (R).Size
+                                          = Size_Of_Node (Snap'Old, A)
+                                            + Size_Of_Node (Snap'Old, B))
 
-                  --  A merge does not leave any tree without a root that did
-                  --  not have one already: the two it was given become one.
+                  --  The model of the result is the sum of the two operands'.
+                  --  Because the model is cached, this is an equality between
+                  --  three array elements rather than a statement about which
+                  --  nodes belong to which tree.
 
-                  and then (for all X in 1 .. H.Count =>
-                              (if H.Links (X).Parent = 0 and then X /= R
-                               then H'Old.Links (X).Parent = 0
+                  and then Sub_Now (R)
+                           = Sub_Of (Snap'Old, A) + Sub_Of (Snap'Old, B)
+
+                  --  A merge creates no root except the one it returns, and A
+                  --  and B are no longer roots.
+
+                  and then (for all X in 1 .. Capacity =>
+                              (if In_Use (Snap, X)
+                                  and then Links (X).Parent = 0
+                                  and then X /= R
+                               then Snap'Old.Links (X).Parent = 0
                                     and then X /= A
                                     and then X /= B))
 
-                  --  And it leaves the other trees of the forest alone
+                  --  And the other trees of the arena come back untouched,
+                  --  their cached models included. This is the clause that
+                  --  the recursive alternative could not state without a
+                  --  reachability relation, and it composes through the
+                  --  recursion exactly as the link-level frame does.
 
-                  and then (for all X in 1 .. H.Count =>
-                              (if H'Old.Links (X).Parent = 0
+                  and then (for all X in 1 .. Capacity =>
+                              (if In_Use (Snap'Old, X)
+                                  and then Snap'Old.Links (X).Parent = 0
                                   and then X /= A
                                   and then X /= B
-                               then H.Links (X) = H'Old.Links (X))),
+                               then Links (X) = Snap'Old.Links (X)
+                                    and then Sub (X) = Snap'Old.Sub (X))),
           Subprogram_Variant =>
-            (Decreases => Size_Of (H, A) + Size_Of (H, B));
-   --  Merge the two trees rooted at A and B into one, and return its root.
-   --  Everything the operations do to the shape of the pool happens here.
+            (Decreases => Size_Now (A) + Size_Now (B));
+   --  Merge the two trees rooted at A and B into one and return its root.
+   --  Everything the operations do to the shape of the arena happens here.
+
+   --------------
+   -- Allocate --
+   --------------
+
+   procedure Allocate (I : out Slot; K : Key_Type) is
+      Before : constant Snapshot := Snap with Ghost;
+      Head   : constant Slot := Free;
+      Next   : constant Tree := Links (Head).Left;
+   begin
+      I := Head;
+
+      --  The head sits at the far end of the chain, and by injectivity it is
+      --  the only node that does, so every other free node is at a position
+      --  that survives the decrement.
+
+      pragma Assert (Chain_Pos (Head) = Free_Count);
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if not In_Use (Before, X) and then X /= Head
+            then Chain_Pos (X) in 1 .. Capacity
+                 and then Chain_At (Chain_Pos (X)) = X
+                 and then Chain_Pos (X) /= Free_Count
+                 and then Chain_Pos (X) <= Free_Count - 1));
+
+      Free       := Next;
+      Free_Count := Free_Count - 1;
+
+      Chain_Pos (Head) := 0;
+      Keys (Head) := K;
+      Links (Head) :=
+        (Left => 0, Right => 0, Parent => 0, Size => 1, Dist => 1);
+      Sub (Head) := KM.Add (KM.Empty_Multiset, K);
+
+      --  Nothing in use pointed at the head, because a free node's Left is a
+      --  free node and every used node's links are used nodes.
+
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if In_Use (Before, X)
+            then X /= Head and then Links (X) = Before.Links (X)));
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if In_Use (Before, X) then Node_In_Use (Snap, X)));
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if not In_Use (Snap, X) then Node_Free (Snap, X)));
+   end Allocate;
+
+   ----------------
+   -- Deallocate --
+   ----------------
+
+   procedure Deallocate (I : Slot) is
+      Before : constant Snapshot := Snap with Ghost;
+   begin
+      Links (I).Left   := Free;
+      Free_Count       := Free_Count + 1;
+      Chain_Pos (I)    := Free_Count;
+      Chain_At (Free_Count) := I;
+      Free             := I;
+
+      --  I was in use, so no free node's Left named it and it is genuinely a
+      --  new position at the far end: injectivity survives because every other
+      --  free node is strictly below the new Free_Count.
+
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if not In_Use (Before, X)
+            then Chain_Pos (X) = Before.Chain_Pos (X)
+                 and then Chain_Pos (X) <= Free_Count - 1));
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if In_Use (Before, X) and then X /= I
+            then Links (X) = Before.Links (X)
+                 and then Node_In_Use (Snap, X)));
+      pragma Assert
+        (for all X in 1 .. Capacity =>
+           (if not In_Use (Snap, X) then Node_Free (Snap, X)));
+   end Deallocate;
+
+   -----------
+   -- Clear --
+   -----------
+
+   procedure Clear is
+   begin
+      --  Thread every slot onto the free chain, the last slot at the head, so
+      --  that a slot's position along the chain is its own index.
+      --
+      --  The ghost arrays are written as aggregates rather than in a loop. An
+      --  iterated component association defines every element directly, so
+      --  there is nothing for a loop invariant to carry out; the loop version
+      --  rested its postcondition on carrying one, which was a single large
+      --  goal that sat on the prover's time limit and went through or not
+      --  depending on how loaded the run was. These three arrays are erased at
+      --  run time, so the form costs nothing there.
+
+      Chain_Pos := [for J in 1 .. Capacity => J];
+      Chain_At  := [for J in 1 .. Capacity => J];
+      Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
+
+      --  Links is real, and there the same form is not free: an array
+      --  aggregate is built as a whole-array temporary before being assigned,
+      --  and at the sizes this arena exists for that temporary overflows an
+      --  ordinary stack. So this one array is written slot by slot. It costs
+      --  an invariant, but only over the one array whose elements differ from
+      --  each other, and the three goals above stay in their cheap form.
+
+      for I in 1 .. Capacity loop
+         Links (I) :=
+           (Left   => (if I = 1 then 0 else I - 1),
+            Right  => 0,
+            Parent => 0,
+            Size   => 0,
+            Dist   => 0);
+
+         pragma Loop_Invariant
+           (for all J in 1 .. I =>
+              Links (J) = (Left   => (if J = 1 then 0 else J - 1),
+                           Right  => 0,
+                           Parent => 0,
+                           Size   => 0,
+                           Dist   => 0));
+      end loop;
+
+      Free       := Capacity;
+      Free_Count := Capacity;
+
+      --  One clause of Valid at a time, so that none of them is a large
+      --  verification condition.
+
+      pragma Assert (Chain_Pos (Free) = Free_Count);
+      pragma Assert (for all I in 1 .. Capacity => not In_Use (Snap, I));
+      pragma Assert
+        (for all K in 1 .. Capacity =>
+           Chain_At (K) in 1 .. Capacity
+           and then Chain_Pos (Chain_At (K)) = K);
+      pragma Assert
+        (for all I in 1 .. Capacity =>
+           Chain_Pos (I) in 1 .. Capacity
+           and then Chain_Pos (I) <= Free_Count
+           and then Chain_At (Chain_Pos (I)) = I);
+      pragma Assert
+        (for all I in 1 .. Capacity =>
+           (if Chain_Pos (I) = 1
+            then Links (I).Left = 0
+            else Links (I).Left /= 0
+                 and then Chain_Pos (Links (I).Left) = Chain_Pos (I) - 1));
+      pragma Assert (for all I in 1 .. Capacity => Node_Free (Snap, I));
+
+      pragma Assert (Chain_Sound (Snap));
+      pragma Assert (Nodes_Sound (Snap));
+   end Clear;
+
+   -------------
+   -- Size_Of --
+   -------------
+
+   function Size_Of (T : Tree) return Extended_Index is
+     (if T = 0 then 0 else Links (T).Size);
+
+   --------------
+   -- Peek_Min --
+   --------------
+
+   function Peek_Min (T : Tree) return Key_Type is (Keys (T));
 
    -----------
    -- Merge --
    -----------
 
-   procedure Merge
-     (H : in out Heap; A, B : Extended_Index; R : out Extended_Index)
-   is
-      Top   : Index;
-      Other : Index;
-      Rest  : Extended_Index;
-      Sub   : Extended_Index;
-      Swap  : Extended_Index;
+   procedure Merge (A, B : Tree; R : out Tree) is
+      Was   : Extended_Index with Ghost;
+      --  The size of Top before its right subtree is cut loose
+
+      Top   : Slot;
+      Other : Slot;
+      Rest  : Tree;
+      Sub_R : Tree;
+      Swap  : Tree;
    begin
       if A = 0 or else B = 0 then
          R := (if A = 0 then B else A);
 
-         pragma Assert (Well_Linked (H));
+         if A = 0 then
+            KM.Lemma_Sym_Sum (Sub_Now (A), Sub_Now (B));
+         end if;
+         Models.Lemma_Sum_Empty (Sub_Now (R));
+
          return;
       end if;
 
       --  The smaller of the two roots is the root of the result
 
-      if H.Keys (A) <= H.Keys (B) then
+      if Keys (A) <= Keys (B) then
          Top := A;
          Other := B;
       else
@@ -96,774 +343,140 @@ package body Heaps.Leftist with SPARK_Mode is
       end if;
 
       --  Detach the right subtree of Top. Doing so before the recursive call
-      --  rather than after it keeps the pool a well-formed forest throughout:
+      --  rather than after it keeps the arena a well formed forest throughout:
       --  Top is left a smaller but perfectly valid tree, and the subtree that
-      --  has just left it becomes a tree of its own.
+      --  has just left it becomes a tree of its own. The cached model of Top
+      --  is brought down with its Size, by the same assignment.
 
-      Rest := H.Links (Top).Right;
+      Was  := Links (Top).Size;
+      Rest := Links (Top).Right;
 
       if Rest /= 0 then
-         H.Links (Rest).Parent := 0;
+         Links (Rest).Parent := 0;
       end if;
 
-      H.Links (Top).Right := 0;
-      H.Links (Top).Size := 1 + Size_Of (H, H.Links (Top).Left);
-      H.Links (Top).Dist := 1;
+      Links (Top).Right := 0;
+      Links (Top).Size := 1 + Size_Now (Links (Top).Left);
+      Links (Top).Dist := 1;
+      Sub (Top) :=
+        KM.Add (KM.Sum (Sub_Now (Links (Top).Left),
+                        Sub_Now (Links (Top).Right)),
+                Keys (Top));
 
-      Merge (H, Rest, Other, Sub);
+      --  The detached subtree is strictly smaller than the node it left, so
+      --  the bound the contract carries still holds one level down.
+
+      pragma Assert (Was = 1 + Size_Now (Links (Top).Left) + Size_Now (Rest));
+      pragma Assert (Size_Now (Rest) + Size_Now (Other) <= Capacity);
+
+      Merge (Rest, Other, Sub_R);
 
       --  Top was a tree of its own across the call, so the merge left it
-      --  alone, and what it says about its left subtree still holds.
+      --  alone -- its links and its cached model both.
 
-      pragma Assert (Sub /= 0 and then Sub /= Top);
-      pragma Assert (H.Links (Sub).Parent = 0);
-      pragma Assert (H.Links (Top).Left /= Sub);
+      pragma Assert (Sub_R /= 0 and then Sub_R /= Top);
+      pragma Assert (Links (Sub_R).Parent = 0);
+      pragma Assert (Links (Top).Left /= Sub_R);
 
-      H.Links (Sub).Parent := Top;
-      H.Links (Top).Right := Sub;
+      Links (Sub_R).Parent := Top;
+      Links (Top).Right := Sub_R;
 
       --  Restore the leftist condition by putting the deeper subtree on the
       --  left, then say what the node has become.
 
-      if Dist_Of (H, H.Links (Top).Left) < Dist_Of (H, H.Links (Top).Right)
-      then
-         Swap := H.Links (Top).Left;
-         H.Links (Top).Left := H.Links (Top).Right;
-         H.Links (Top).Right := Swap;
+      if Dist_Now (Links (Top).Left) < Dist_Now (Links (Top).Right) then
+         Swap := Links (Top).Left;
+         Links (Top).Left := Links (Top).Right;
+         Links (Top).Right := Swap;
       end if;
 
-      pragma Assert
-        (Dist_Of (H, H.Links (Top).Right)
-         <= Size_Of (H, H.Links (Top).Right));
-
-      H.Links (Top).Size :=
-        1 + Size_Of (H, H.Links (Top).Left) + Size_Of (H, H.Links (Top).Right);
-      H.Links (Top).Dist := 1 + Dist_Of (H, H.Links (Top).Right);
-
-      pragma Assert (H.Links (Top).Dist <= H.Links (Top).Size);
-      pragma Assert (Well_Linked (H));
+      Links (Top).Size :=
+        1 + Size_Now (Links (Top).Left) + Size_Now (Links (Top).Right);
+      Links (Top).Dist := 1 + Dist_Now (Links (Top).Right);
+      Sub (Top) :=
+        KM.Add (KM.Sum (Sub_Now (Links (Top).Left),
+                        Sub_Now (Links (Top).Right)),
+                Keys (Top));
 
       R := Top;
    end Merge;
-
-   -----------------
-   -- Lemma_Above --
-   -----------------
-
-   procedure Lemma_Above (H : Heap; I : Index)
-     with Ghost,
-          Pre  => Is_Heap (H) and then I <= H.Count,
-          Post => H.Keys (H.Root) <= H.Keys (I),
-          Subprogram_Variant => (Increases => H.Links (I).Size);
-   --  Walk up the parent links from I. Each step meets a key no larger than
-   --  the one below it and a strictly larger subtree, so the walk cannot
-   --  cycle and ends at the only node without a parent.
-
-   procedure Lemma_Above (H : Heap; I : Index) is
-   begin
-      if I /= H.Root then
-         Lemma_Above (H, H.Links (I).Parent);
-      end if;
-   end Lemma_Above;
-
-   ---------------------------
-   -- Lemma_Root_Is_Minimum --
-   ---------------------------
-
-   procedure Lemma_Root_Is_Minimum (H : Heap) is
-   begin
-      for I in 1 .. H.Count loop
-         Lemma_Above (H, I);
-
-         pragma Loop_Invariant
-           (for all J in 1 .. I => H.Keys (H.Root) <= H.Keys (J));
-      end loop;
-   end Lemma_Root_Is_Minimum;
-
-   ------------
-   -- Min_Of --
-   ------------
-
-   function Min_Of (H : Heap) return Key_Type is
-      Result : Key_Type := H.Keys (1);
-   begin
-      for I in 2 .. H.Count loop
-         if H.Keys (I) < Result then
-            Result := H.Keys (I);
-         end if;
-
-         pragma Loop_Invariant (for all J in 1 .. I => Result <= H.Keys (J));
-         pragma Loop_Invariant (for some J in 1 .. I => Result = H.Keys (J));
-      end loop;
-
-      return Result;
-   end Min_Of;
-
-   -----------
-   -- Clear --
-   -----------
-
-   procedure Clear (H : in out Heap) is
-   begin
-      H.Count := 0;
-      H.Root := 0;
-   end Clear;
-
-   ------------
-   -- Insert --
-   ------------
-
-   procedure Insert (H : in out Heap; K : Key_Type) is
-      Old_Keys : constant Key_Array := H.Keys with Ghost;
-
-      Slot     : constant Index := H.Count + 1;
-      Before   : constant Extended_Index := H.Root;
-      New_Root : Extended_Index;
-   begin
-      --  A one-node heap is appended to the pool and then merged in. Since
-      --  the used slots are a prefix, the model simply gains the key.
-
-      H.Count := Slot;
-      H.Keys (Slot) := K;
-      H.Links (Slot) :=
-        (Left => 0, Right => 0, Parent => 0, Size => 1, Dist => 1);
-
-      Models.Lemma_Same_Prefix (Old_Keys, H.Keys, Slot - 1);
-      Models.Lemma_Add_Congruent
-        (Models.Occurrences (Old_Keys, Slot - 1),
-         Models.Occurrences (H.Keys, Slot - 1), K);
-
-      pragma Assert (Size_Of (H, Before) = Slot - 1);
-
-      Merge (H, Before, Slot, New_Root);
-      H.Root := New_Root;
-
-      pragma Assert (H.Links (New_Root).Size = H.Count);
-
-      Models.Lemma_Same_Prefix (Old_Keys, H.Keys, Slot - 1);
-   end Insert;
-
-   -----------
-   -- Graft --
-   -----------
-
-   procedure Graft
-     (Into   : in out Heap;
-      From   : Heap;
-      B_Root : out Extended_Index)
-     with Pre  => Is_Heap (Into)
-                  and then Is_Heap (From)
-                  and then From.Count <= Into.Capacity - Into.Count,
-          Post => Well_Linked (Into)
-                  and then Into.Count = Into.Count'Old + From.Count
-                  and then Into.Root = Into.Root'Old
-                  and then B_Root <= Into.Count
-                  and then (if Into.Root /= 0 and then B_Root /= 0
-                            then Into.Root /= B_Root)
-                  and then (if Into.Root /= 0
-                            then Into.Links (Into.Root).Parent = 0)
-                  and then (if B_Root /= 0
-                            then Into.Links (B_Root).Parent = 0)
-                  and then (if Into.Count /= 0
-                            then Into.Root /= 0 or else B_Root /= 0)
-                  and then Size_Of (Into, Into.Root)
-                           + Size_Of (Into, B_Root) = Into.Count
-                  and then (for all X in 1 .. Into.Count =>
-                              (if Into.Links (X).Parent = 0
-                               then X = Into.Root or else X = B_Root))
-                  and then Model (Into) = Model (Into)'Old + Model (From);
-   --  Copy the nodes of From into the free slots at the end of Into's pool,
-   --  translating every index by the number of slots already in use, and
-   --  return the slot the root of the copy landed in. The pool then holds a
-   --  forest of exactly two trees, which is what Merge is given.
-   --
-   --  This is a subprogram of its own rather than the first half of Meld
-   --  because its proof and the merge's have nothing to say to each other:
-   --  keeping them apart is what keeps each proof obligation small enough to
-   --  discharge.
-   --
-   --  The model of the state on entry is reached for with 'Old, which is not
-   --  free here: the attribute is applied to a function of the whole record,
-   --  so a copy of the pool travels through every proof obligation of the
-   --  copy loop. Handing that model in as a ghost parameter instead would
-   --  keep the obligations smaller, but a ghost formal is not something the
-   --  language has.
-
-   procedure Graft
-     (Into   : in out Heap;
-      From   : Heap;
-      B_Root : out Extended_Index)
-   is
-      Old_Keys  : constant Key_Array  := Into.Keys with Ghost;
-      Old_Links : constant Link_Array := Into.Links with Ghost;
-
-      Cap   : constant Extended_Index := Into.Capacity;
-      Base  : constant Extended_Index := Into.Count;
-      Extra : constant Extended_Index := From.Count;
-      Total : constant Extended_Index := Base + Extra;
-
-      Prev : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Heaps.Unsorted.Meld
-   begin
-      --  Into.Count is left alone until the copy is complete, so that no
-      --  intermediate state has a link pointing at a slot that is in use but
-      --  not yet filled.
-
-      for J in 1 .. Extra loop
-         Prev := Into.Keys;
-
-         Into.Keys (Base + J) := From.Keys (J);
-         Into.Links (Base + J) :=
-           (Left   => (if From.Links (J).Left = 0
-                       then 0 else Base + From.Links (J).Left),
-            Right  => (if From.Links (J).Right = 0
-                       then 0 else Base + From.Links (J).Right),
-            Parent => (if From.Links (J).Parent = 0
-                       then 0 else Base + From.Links (J).Parent),
-            Size   => From.Links (J).Size,
-            Dist   => From.Links (J).Dist);
-
-         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + J - 1);
-         Models.Lemma_Add_Congruent
-           (Models.Occurrences (Prev, Base + J - 1),
-            Models.Occurrences (Into.Keys, Base + J - 1),
-            From.Keys (J));
-         Models.Lemma_Sum_Add
-           (Models.Occurrences (Old_Keys, Base),
-            Models.Occurrences (From.Keys, J - 1),
-            From.Keys (J));
-         Models.Lemma_Sum_Empty (Models.Occurrences (Old_Keys, Base));
-
-         pragma Loop_Invariant (Into.Count = Base);
-         pragma Loop_Invariant (Into.Root = Into.Root'Loop_Entry);
-         pragma Loop_Invariant
-           (for all M in 1 .. Base => Into.Keys (M) = Old_Keys (M));
-         pragma Loop_Invariant
-           (for all M in 1 .. Base => Into.Links (M) = Old_Links (M));
-         pragma Loop_Invariant
-           (for all M in 1 .. J => Into.Keys (Base + M) = From.Keys (M));
-         pragma Loop_Invariant
-           (for all M in 1 .. J =>
-              Into.Links (Base + M) =
-                (Left   => (if From.Links (M).Left = 0
-                            then 0 else Base + From.Links (M).Left),
-                 Right  => (if From.Links (M).Right = 0
-                            then 0 else Base + From.Links (M).Right),
-                 Parent => (if From.Links (M).Parent = 0
-                            then 0 else Base + From.Links (M).Parent),
-                 Size   => From.Links (M).Size,
-                 Dist   => From.Links (M).Dist));
-         pragma Loop_Invariant
-           (Models.Occurrences (Into.Keys, Base + J)
-            = Models.Occurrences (Old_Keys, Base)
-              + Models.Occurrences (From.Keys, J));
-      end loop;
-
-      if Extra = 0 then
-         Models.Lemma_Sum_Empty (Models.Occurrences (Old_Keys, Base));
-      end if;
-
-      Into.Count := Total;
-      B_Root := (if From.Root = 0 then 0 else Base + From.Root);
-
-      --  Every clause of Well_Linked is about a node and its immediate
-      --  neighbours, so a copied node satisfies it exactly because the
-      --  original did, with each index shifted; the nodes that were already
-      --  there are untouched. Each family of clauses is established for one
-      --  half of the pool at a time, which keeps every obligation small.
-
-      --  What Well_Linked and Is_Heap say about each operand, spelled out on
-      --  that operand's own indices before anything is shifted.
-
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           From.Links (M).Left in 0 .. Extra
-           and then From.Links (M).Right in 0 .. Extra
-           and then From.Links (M).Parent in 0 .. Extra
-           and then (if M /= From.Root then From.Links (M).Parent /= 0));
-      pragma Assert
-        (for all M in 1 .. Base =>
-           Into.Links (M).Left in 0 .. Base
-           and then Into.Links (M).Right in 0 .. Base
-           and then Into.Links (M).Parent in 0 .. Base
-           and then (if M /= Into.Root then Into.Links (M).Parent /= 0));
-
-      pragma Assert
-        (for all X in 1 .. Base =>
-           Size_Of (Into, X) = Old_Links (X).Size
-           and then Dist_Of (Into, X) = Old_Links (X).Dist);
-      pragma Assert
-        (for all X in 1 .. Extra =>
-           Size_Of (Into, Base + X) = From.Links (X).Size
-           and then Dist_Of (Into, Base + X) = From.Links (X).Dist);
-
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           Into.Links (Base + M).Left in 0 .. Total
-           and then Into.Links (Base + M).Right in 0 .. Total
-           and then Into.Links (Base + M).Parent in 0 .. Total);
-
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           (Into.Links (Base + M).Left = 0) = (From.Links (M).Left = 0)
-           and then (Into.Links (Base + M).Right = 0)
-                    = (From.Links (M).Right = 0)
-           and then (Into.Links (Base + M).Parent = 0)
-                    = (From.Links (M).Parent = 0));
-
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           Size_Of (Into, Into.Links (Base + M).Left)
-           = Size_Of (From, From.Links (M).Left)
-           and then Size_Of (Into, Into.Links (Base + M).Right)
-                    = Size_Of (From, From.Links (M).Right)
-           and then Dist_Of (Into, Into.Links (Base + M).Left)
-                    = Dist_Of (From, From.Links (M).Left)
-           and then Dist_Of (Into, Into.Links (Base + M).Right)
-                    = Dist_Of (From, From.Links (M).Right));
-
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           (if Into.Links (Base + M).Left /= 0
-            then Into.Links (Into.Links (Base + M).Left).Parent = Base + M
-                 and then Into.Keys (Base + M)
-                          <= Into.Keys (Into.Links (Base + M).Left)
-                 and then Into.Links (Base + M).Left
-                          /= Into.Links (Base + M).Right)
-           and then (if Into.Links (Base + M).Right /= 0
-                     then Into.Links
-                            (Into.Links (Base + M).Right).Parent = Base + M
-                          and then Into.Keys (Base + M)
-                                   <= Into.Keys
-                                        (Into.Links (Base + M).Right))
-           and then (if Into.Links (Base + M).Parent /= 0
-                     then Into.Links
-                            (Into.Links (Base + M).Parent).Left = Base + M
-                          or else Into.Links
-                                    (Into.Links (Base + M).Parent).Right
-                                  = Base + M));
-
-      pragma Assert
-        (for all M in 1 .. Base =>
-           (if Into.Links (M).Left /= 0
-                     then Into.Links (Into.Links (M).Left).Parent = M
-                          and then Into.Keys (M)
-                                   <= Into.Keys (Into.Links (M).Left)
-                          and then Into.Links (M).Left
-                                   /= Into.Links (M).Right)
-           and then (if Into.Links (M).Right /= 0
-                     then Into.Links (Into.Links (M).Right).Parent = M
-                          and then Into.Keys (M)
-                                   <= Into.Keys (Into.Links (M).Right))
-           and then (if Into.Links (M).Parent /= 0
-                     then Into.Links (Into.Links (M).Parent).Left = M
-                          or else Into.Links (Into.Links (M).Parent).Right
-                                  = M));
-
-      for I in 1 .. Total loop
-         pragma Loop_Invariant
-           (for all P in 1 .. I =>
-              Into.Links (P).Left in 0 .. Total
-              and then Into.Links (P).Right in 0 .. Total
-              and then Into.Links (P).Parent in 0 .. Total);
-      end loop;
-
-      for I in 1 .. Total loop
-         pragma Loop_Invariant
-           (for all P in 1 .. I =>
-              Into.Links (P).Size
-              = 1 + Size_Of (Into, Into.Links (P).Left)
-                  + Size_Of (Into, Into.Links (P).Right)
-              and then Into.Links (P).Dist
-                       = 1 + Dist_Of (Into, Into.Links (P).Right)
-              and then Into.Links (P).Dist <= Into.Links (P).Size
-              and then Dist_Of (Into, Into.Links (P).Left)
-                       >= Dist_Of (Into, Into.Links (P).Right));
-      end loop;
-
-      for I in 1 .. Total loop
-         pragma Loop_Invariant
-           (for all P in 1 .. I =>
-              (if Into.Links (P).Left /= 0
-               then Into.Links (Into.Links (P).Left).Parent = P
-                    and then Into.Keys (P)
-                             <= Into.Keys (Into.Links (P).Left)
-                    and then Into.Links (P).Left /= Into.Links (P).Right)
-              and then (if Into.Links (P).Right /= 0
-                        then Into.Links (Into.Links (P).Right).Parent = P
-                             and then Into.Keys (P)
-                                      <= Into.Keys (Into.Links (P).Right))
-              and then (if Into.Links (P).Parent /= 0
-                        then Into.Links (Into.Links (P).Parent).Left = P
-                             or else Into.Links
-                                       (Into.Links (P).Parent).Right = P));
-      end loop;
-
-      pragma Assert (Well_Linked (Into));
-
-      --  The two roots are the only parentless nodes left.
-
-      pragma Assert
-        (for all M in 1 .. Base =>
-           (if Into.Links (M).Parent = 0 then M = Into.Root));
-      pragma Assert
-        (for all M in 1 .. Extra =>
-           (if Into.Links (Base + M).Parent = 0 then Base + M = B_Root));
-
-      for X in 1 .. Total loop
-         pragma Loop_Invariant
-           (for all Y in 1 .. X =>
-              (if Into.Links (Y).Parent = 0
-               then Y = Into.Root or else Y = B_Root));
-      end loop;
-   end Graft;
 
    ----------
    -- Meld --
    ----------
 
-   procedure Meld (Into : in out Heap; From : in out Heap) is
-      B_Root   : Extended_Index;
-      New_Root : Extended_Index;
+   procedure Meld (T : in out Tree; U : in out Tree) is
+      New_Root : Tree;
    begin
-      Graft (Into, From, B_Root);
-
-      --  The pool now holds a forest of two trees, and merging them leaves a
-      --  single one, exactly as an insertion does.
-
-      Merge (Into, Into.Root, B_Root, New_Root);
-      Into.Root := New_Root;
-
-      Clear (From);
+      Merge (T, U, New_Root);
+      T := New_Root;
+      U := 0;
    end Meld;
+
+   ------------
+   -- Insert --
+   ------------
+
+   procedure Insert (T : in out Tree; K : Key_Type) is
+      Node     : Slot;
+      New_Root : Tree;
+      Before   : constant Tree := T;
+   begin
+      Allocate (Node, K);
+
+      pragma Assert (Before /= Node);
+
+      Merge (Before, Node, New_Root);
+      T := New_Root;
+
+      Models.Lemma_Sum_Empty (Sub_Now (Before));
+      Models.Lemma_Sum_Add (Sub_Now (Before), KM.Empty_Multiset, K);
+   end Insert;
 
    -----------------
    -- Extract_Min --
    -----------------
 
-   procedure Extract_Min (H : in out Heap; K : out Key_Type) is
-      Old_Keys : constant Key_Array := H.Keys with Ghost;
-      Cut_Keys : Key_Array := H.Keys with Ghost;
-
-      Gone : constant Index := H.Root;
-      Last : constant Index := H.Count;
-
-      Left_Sub  : Extended_Index := H.Links (Gone).Left;
-      Right_Sub : Extended_Index := H.Links (Gone).Right;
-
-      New_Root : Extended_Index;
+   procedure Extract_Min (T : in out Tree; K : out Key_Type) is
+      Gone     : constant Slot := T;
+      Held     : constant Extended_Index := Links (T).Size with Ghost;
+      --  What the tree held before its root was cut away
+      Left     : constant Tree := Links (Gone).Left;
+      Right    : constant Tree := Links (Gone).Right;
+      New_Root : Tree;
    begin
-      Lemma_Root_Is_Minimum (H);
-      K := H.Keys (Gone);
+      K := Keys (Gone);
 
-      pragma Assert
-        (Size_Of (H, Left_Sub) + Size_Of (H, Right_Sub) = Last - 1);
+      --  Cut the two subtrees loose and give the root's slot back. Without
+      --  prefix compaction there is nothing else to do: no live node moves, so
+      --  no cached model has to follow one.
 
-      --  Cut the two subtrees loose and leave the old root a lone node, so
-      --  that moving it out of the pool below disturbs nothing.
-
-      if Left_Sub /= 0 then
-         H.Links (Left_Sub).Parent := 0;
+      if Left /= 0 then
+         Links (Left).Parent := 0;
       end if;
 
-      if Right_Sub /= 0 then
-         H.Links (Right_Sub).Parent := 0;
+      if Right /= 0 then
+         Links (Right).Parent := 0;
       end if;
 
-      H.Links (Gone) :=
-        (Left => 0, Right => 0, Parent => 0, Size => 1, Dist => 1);
+      --  Cutting the children off leaves Gone a one-node tree, so its size and
+      --  its cached model have to say so: a node still in use whose Size were
+      --  0, or whose model did not match its key, would make the arena
+      --  invalid between here and the release below.
 
-      pragma Assert
-        (for all I in 1 .. Last =>
-           (if I /= Gone then H.Links (I).Parent /= Gone));
-      pragma Assert
-        (for all I in 1 .. Last =>
-           H.Links (I).Left <= Last
-           and then H.Links (I).Right <= Last
-           and then H.Links (I).Parent <= Last);
-      pragma Assert
-        (for all I in 1 .. Last =>
-           (if H.Links (I).Parent = 0
-            then I = Gone or else I = Left_Sub or else I = Right_Sub));
+      Links (Gone) := (Left => 0, Right => 0, Parent => 0, Size => 1,
+                       Dist => 1);
+      Sub (Gone) := KM.Add (KM.Empty_Multiset, Keys (Gone));
 
-      --  Fill the hole with the last node of the pool and tell its three
-      --  neighbours where it went, which is what keeps the used slots a
-      --  prefix and the model a plain scan.
+      Deallocate (Gone);
 
-      if Gone /= Last then
-         declare
-            Mid   : constant Heap := H with Ghost;
-            Kid_L : constant Extended_Index := H.Links (Last).Left;
-            Kid_R : constant Extended_Index := H.Links (Last).Right;
-            Up    : constant Extended_Index := H.Links (Last).Parent;
-         begin
-            --  Only the parent and the children of the last node refer to
-            --  it, which is why telling those three is enough.
+      --  The two subtrees together held one node fewer than the tree did.
 
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Up
-                  then H.Links (I).Left /= Last
-                       and then H.Links (I).Right /= Last));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Kid_L and then I /= Kid_R
-                  then H.Links (I).Parent /= Last));
-            pragma Assert (Kid_L /= Gone and then Kid_R /= Gone);
-            pragma Assert (Kid_L /= Last and then Kid_R /= Last);
-            pragma Assert (Up /= Gone and then Up /= Last);
+      pragma Assert (Size_Now (Left) + Size_Now (Right) = Held - 1);
+      pragma Assert (Size_Now (Left) + Size_Now (Right) <= Capacity);
 
-            H.Keys (Gone) := H.Keys (Last);
-            H.Links (Gone) := H.Links (Last);
-
-            if Kid_L /= 0 then
-               H.Links (Kid_L).Parent := Gone;
-            end if;
-
-            if Kid_R /= 0 then
-               H.Links (Kid_R).Parent := Gone;
-            end if;
-
-            if Up /= 0 then
-               pragma Assert
-                 (H.Links (Up).Left = Last or else H.Links (Up).Right = Last);
-
-               if H.Links (Up).Left = Last then
-                  H.Links (Up).Left := Gone;
-               else
-                  H.Links (Up).Right := Gone;
-               end if;
-            end if;
-
-            pragma Assert
-              (if Up /= 0
-               then H.Links (Up).Left
-                    = (if Mid.Links (Up).Left = Last
-                       then Gone else Mid.Links (Up).Left)
-                    and then H.Links (Up).Right
-                             = (if Mid.Links (Up).Right = Last
-                                then Gone else Mid.Links (Up).Right));
-
-            --  What is left in the last slot is now a duplicate of what sits
-            --  in the hole, so empty it before it leaves the pool.
-
-            H.Links (Last) :=
-              (Left => 0, Right => 0, Parent => 0, Size => 1, Dist => 1);
-
-            if Left_Sub = Last then
-               Left_Sub := Gone;
-            end if;
-
-            if Right_Sub = Last then
-               Right_Sub := Gone;
-            end if;
-
-            --  Nothing but the moved node and its three neighbours changed
-
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                     and then I /= Kid_L and then I /= Kid_R
-                  then H.Links (I) = Mid.Links (I)));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last
-                  then H.Links (I).Size = Mid.Links (I).Size
-                       and then H.Links (I).Dist = Mid.Links (I).Dist));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                  then H.Links (I).Left = Mid.Links (I).Left
-                       and then H.Links (I).Right = Mid.Links (I).Right));
-            pragma Assert (H.Links (Gone) = Mid.Links (Last));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                  then H.Links (I).Left /= Gone
-                       and then H.Links (I).Right /= Gone
-                       and then H.Links (I).Left /= Last
-                       and then H.Links (I).Right /= Last));
-
-            --  The only subtree sizes and depths that moved are the two the
-            --  node did
-
-            pragma Assert
-              (for all X in 0 .. Last =>
-                 (if X /= Gone and then X /= Last
-                  then Size_Of (H, X) = Size_Of (Mid, X)
-                       and then Dist_Of (H, X) = Dist_Of (Mid, X)));
-            pragma Assert
-              (Size_Of (H, Gone) = Size_Of (Mid, Last)
-               and then Dist_Of (H, Gone) = Dist_Of (Mid, Last));
-            pragma Assert
-              (H.Links (Gone).Size
-               = 1 + Size_Of (H, Kid_L) + Size_Of (H, Kid_R));
-            pragma Assert
-              (if Up /= 0
-               then Mid.Links (Up).Left /= Gone
-                    and then Mid.Links (Up).Right /= Gone);
-            pragma Assert
-              (if Up /= 0
-               then Size_Of (H, H.Links (Up).Left)
-                    = Size_Of (Mid, Mid.Links (Up).Left)
-                    and then Size_Of (H, H.Links (Up).Right)
-                             = Size_Of (Mid, Mid.Links (Up).Right));
-            pragma Assert
-              (if Up /= 0
-               then Dist_Of (H, H.Links (Up).Left)
-                    = Dist_Of (Mid, Mid.Links (Up).Left)
-                    and then Dist_Of (H, H.Links (Up).Right)
-                             = Dist_Of (Mid, Mid.Links (Up).Right));
-
-            Models.Lemma_Set (Old_Keys, H.Keys, Gone, Last - 1);
-
-            --  The three nodes the move touched, one at a time, and then
-            --  everything else, which the move left where it was
-
-            pragma Assert
-              (H.Links (Last).Size
-               = 1 + Size_Of (H, H.Links (Last).Left)
-                   + Size_Of (H, H.Links (Last).Right));
-            pragma Assert
-              (H.Links (Gone).Size
-               = 1 + Size_Of (H, H.Links (Gone).Left)
-                   + Size_Of (H, H.Links (Gone).Right));
-            pragma Assert
-              (if Up /= 0
-               then H.Links (Up).Size
-                    = 1 + Size_Of (H, H.Links (Up).Left)
-                        + Size_Of (H, H.Links (Up).Right));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                  then H.Links (I).Size
-                       = 1 + Size_Of (H, H.Links (I).Left)
-                           + Size_Of (H, H.Links (I).Right)));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 H.Links (I).Size
-                 = 1 + Size_Of (H, H.Links (I).Left)
-                     + Size_Of (H, H.Links (I).Right));
-
-            pragma Assert
-              (H.Links (Last).Dist = 1 + Dist_Of (H, H.Links (Last).Right)
-               and then H.Links (Last).Dist <= H.Links (Last).Size
-               and then Dist_Of (H, H.Links (Last).Left)
-                        >= Dist_Of (H, H.Links (Last).Right));
-            pragma Assert
-              (H.Links (Gone).Left = Kid_L
-               and then H.Links (Gone).Right = Kid_R);
-            pragma Assert
-              (Dist_Of (H, Kid_L) = Dist_Of (Mid, Kid_L)
-               and then Dist_Of (H, Kid_R) = Dist_Of (Mid, Kid_R)
-               and then Dist_Of (Mid, Kid_L) >= Dist_Of (Mid, Kid_R));
-            pragma Assert
-              (H.Links (Gone).Dist = 1 + Dist_Of (H, H.Links (Gone).Right)
-               and then H.Links (Gone).Dist <= H.Links (Gone).Size
-               and then Dist_Of (H, H.Links (Gone).Left)
-                        >= Dist_Of (H, H.Links (Gone).Right));
-            pragma Assert
-              (if Up /= 0
-               then H.Links (Up).Dist = 1 + Dist_Of (H, H.Links (Up).Right)
-                    and then H.Links (Up).Dist <= H.Links (Up).Size
-                    and then Dist_Of (H, H.Links (Up).Left)
-                             >= Dist_Of (H, H.Links (Up).Right));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                  then H.Links (I).Dist = 1 + Dist_Of (H, H.Links (I).Right)
-                       and then H.Links (I).Dist <= H.Links (I).Size
-                       and then Dist_Of (H, H.Links (I).Left)
-                                >= Dist_Of (H, H.Links (I).Right)));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 H.Links (I).Dist = 1 + Dist_Of (H, H.Links (I).Right)
-                 and then H.Links (I).Dist <= H.Links (I).Size
-                 and then Dist_Of (H, H.Links (I).Left)
-                          >= Dist_Of (H, H.Links (I).Right));
-
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if I /= Gone and then I /= Last and then I /= Up
-                  then (if H.Links (I).Left /= 0
-                        then H.Links (H.Links (I).Left).Parent = I
-                             and then H.Keys (I) <= H.Keys (H.Links (I).Left)
-                             and then H.Links (I).Left /= H.Links (I).Right)
-                       and then (if H.Links (I).Right /= 0
-                                 then H.Links (H.Links (I).Right).Parent = I
-                                      and then H.Keys (I)
-                                               <= H.Keys (H.Links (I).Right))
-                       and then (if H.Links (I).Parent /= 0
-                                 then H.Links (H.Links (I).Parent).Left = I
-                                      or else
-                                        H.Links (H.Links (I).Parent).Right
-                                        = I)));
-            pragma Assert
-              (for all I in 1 .. Last =>
-                 (if H.Links (I).Left /= 0
-                  then H.Links (H.Links (I).Left).Parent = I
-                       and then H.Keys (I) <= H.Keys (H.Links (I).Left)
-                       and then H.Links (I).Left /= H.Links (I).Right)
-                 and then (if H.Links (I).Right /= 0
-                           then H.Links (H.Links (I).Right).Parent = I
-                                and then H.Keys (I)
-                                         <= H.Keys (H.Links (I).Right))
-                 and then (if H.Links (I).Parent /= 0
-                           then H.Links (H.Links (I).Parent).Left = I
-                                or else H.Links (H.Links (I).Parent).Right
-                                        = I));
-
-            pragma Assert (Well_Linked (H));
-            pragma Assert
-              (Size_Of (H, Left_Sub) + Size_Of (H, Right_Sub) = Last - 1);
-            pragma Assert (if Left_Sub /= 0 then H.Links (Left_Sub).Parent = 0);
-            pragma Assert
-              (if Right_Sub /= 0 then H.Links (Right_Sub).Parent = 0);
-            pragma Assert
-              (for all I in 1 .. Last - 1 =>
-                 (if H.Links (I).Parent = 0
-                  then I = Left_Sub or else I = Right_Sub));
-            pragma Assert
-              (for all I in 1 .. Last - 1 =>
-                 H.Links (I).Left < Last
-                 and then H.Links (I).Right < Last
-                 and then H.Links (I).Parent < Last);
-            pragma Assert
-              (Key_Multisets.Add (Models.Occurrences (H.Keys, Last - 1), K)
-               = Models.Occurrences (Old_Keys, Last));
-         end;
-      else
-         Models.Lemma_Same_Prefix (Old_Keys, H.Keys, Last - 1);
-
-         pragma Assert (Well_Linked (H));
-         pragma Assert
-           (for all I in 1 .. Last - 1 =>
-              (if H.Links (I).Parent = 0
-               then I = Left_Sub or else I = Right_Sub));
-         pragma Assert
-           (for all I in 1 .. Last - 1 =>
-              H.Links (I).Left < Last
-              and then H.Links (I).Right < Last
-              and then H.Links (I).Parent < Last);
-         pragma Assert
-           (Key_Multisets.Add (Models.Occurrences (H.Keys, Last - 1), K)
-            = Models.Occurrences (Old_Keys, Last));
-      end if;
-
-      H.Count := Last - 1;
-
-      pragma Assert (Well_Linked (H));
-      pragma Assert (Size_Of (H, Left_Sub) + Size_Of (H, Right_Sub) = Last - 1);
-
-      Cut_Keys := H.Keys;
-
-      Merge (H, Left_Sub, Right_Sub, New_Root);
-      H.Root := New_Root;
-
-      Models.Lemma_Same_Prefix (Cut_Keys, H.Keys, H.Count);
-      Models.Lemma_Add_Congruent
-        (Models.Occurrences (Cut_Keys, H.Count),
-         Models.Occurrences (H.Keys, H.Count), K);
+      Merge (Left, Right, New_Root);
+      T := New_Root;
    end Extract_Min;
 
 end Heaps.Leftist;

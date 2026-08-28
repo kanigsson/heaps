@@ -12,8 +12,7 @@ Verified priority queues backed by arrays. No access types.
 | Min-max heap | O(log n) | O(log n) min or max | yes | Double-ended queue |
 | Interval heap | O(log n) | O(log n) min or max | yes | Double-ended, two keys per node |
 | Beap | O(sqrt n) | O(sqrt n) min | yes | Triangular layers, two parents per node |
-| Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a node pool |
-| Leftist arena | O(log n) | O(log n) min | yes | Same tree, shared pool, O(log n) meld |
+| Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a shared node arena |
 | Block-min directory | O(1) | O(n / B + B) min | yes | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | yes | Baseline |
 | Sorted array | O(n) | O(1) min | yes | Baseline |
@@ -35,22 +34,26 @@ walks only the right spine of each operand, what has to stay short is that
 spine, and the leftist condition -- a node's left subtree is at least as deep
 as its right one -- is what keeps it logarithmic.
 
-It comes in two units, which hold the same tree and differ in who owns the
-pool. `Heaps.Leftist` is a `Heap` object with a pool of its own, holding one
-tree; melding two of them means copying one operand's nodes into the other's
-pool before the splice, which is O(m). `Heaps.Leftist_Arena` makes the pool
+Being the first explicit tree, it is also where the shape of the interface had
+to be settled, and it was settled twice. The obvious shape is a `Heap` object
+with a node pool of its own, holding one tree. That shape makes a meld O(m):
+the two operands live in two disjoint arrays, so one has to be copied into the
+other before its root can be spliced in, and the copy is the whole cost of the
+operation the structure exists for. `Heaps.Leftist` therefore makes the pool
 package state and a heap a root inside it, so several trees share one array and
-a meld is the splice and nothing else. The price is that a heap is no longer a
+a meld is the splice and nothing else. The price is that a heap is not a
 first-class object: one arena per instantiation, no array of arenas and none
 passed to a subprogram. For a collection of mergeable structures that is the
 right way round, since the k operands of a k-way meld are k trees in one arena
 rather than k arenas. `Heaps.Leftist_Pool` is the library-level instance the
 tests and benchmarks use.
 
-Whether the copy matters depends entirely on the operand: it is the whole cost
-when the operands are large, and it is unmeasurable when they are single keys,
-where the two units are within a few percent of each other and four orders of
-magnitude ahead of every rebuilding heap. See [OBSERVATIONS.md](OBSERVATIONS.md).
+Both shapes were built and measured before the object one was dropped, and what
+the measurement says is that the copy costs nothing when the operands are single
+keys and costs everything when they are not -- a factor of about three hundred
+at `n = 1_000_000`. It is the arena that goes on, and it is the shape the other
+mergeable explicit-tree heaps below should take. See
+[OBSERVATIONS.md](OBSERVATIONS.md).
 
 The block-min directory occupies the point between the unsorted baseline and
 a tree. Keys remain unsorted, while a compact second array remembers the
@@ -91,8 +94,7 @@ rebuild across the whole set.
 | Sorted array | O(n + m) | yes | the merge of two sorted runs |
 | Beap | O(m sqrt n) | yes | one insertion per key |
 | Block-min directory | O(m) | yes | one insertion per key |
-| Leftist heap | O(m + log n) | partial | copy into the other pool, then splice |
-| Leftist arena | O(log n) | yes | a splice of two right spines |
+| Leftist heap | O(log n) | yes | a splice of two right spines |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
@@ -127,17 +129,13 @@ array to two live regions rather than three: the output slot is always above
 the part of `Into`'s own run still to be read, so no key is ever copied out of
 the way.
 
-The two leftist units are the two sides of one API decision. `Heaps.Leftist`
-owns its pool, so a meld has to copy `From`'s nodes into the free slots at the
-end of `Into`'s pool, shifting every index, before the two roots can be
-spliced. `Heaps.Leftist_Arena` puts several trees in one pool, so the copy
-disappears and the meld is the splice alone; the price is that a heap stops
-being a first-class object. The benchmark measures exactly what the copy costs:
-on a workload that folds sixteen *one-key* heaps into a large accumulator the
-two are indistinguishable -- 131 ns against 134 at `n = 1_000_000`, where every
-rebuilding heap is four orders of magnitude behind -- and on one that folds
-sixteen heaps of `n / 16` keys the copy is the whole cost, and the arena is 256
-times faster. See [OBSERVATIONS.md](OBSERVATIONS.md).
+The leftist heap is the only entry whose meld is a splice, and it is the reason
+its pool is shared rather than private. Both shapes were measured before the
+private one was dropped: on a workload that folds sixteen *one-key* heaps into
+a large accumulator the two are indistinguishable, and every rebuilding heap is
+four orders of magnitude behind both; on one that folds sixteen heaps of
+`n / 16` keys the copy is the entire cost and the shared pool is some three
+hundred times faster. See [OBSERVATIONS.md](OBSERVATIONS.md).
 
 ## Planned
 
@@ -172,6 +170,14 @@ rather than retrofitted onto the array-backed ones.
 - AA tree
 - AVL tree
 
+The mergeable ones down to the Fibonacci heap should take the shape the leftist
+heap settled on: the pool is package state, a heap is the index of its root,
+and every operation takes that name `in out` because a meld returns one of its
+two operands as the new root. That is what keeps a meld a splice, and it is the
+whole reason the object-shaped leftist heap is not in the catalogue. The last
+three do not meld, so the arena would cost them a first-class object and buy
+them nothing; those stay objects with pools of their own.
+
 ### Integer-key queues
 
 - Bucket queue
@@ -194,17 +200,9 @@ checks:
 
 ### Current status
 
-A `--level=4` run discharges 4 740 of 4 749 checks. The nine that remain are
-all in `Heaps.Leftist.Meld`: seven in the loop that copies one pool into
-another, one index check in it, and the meld's own model postcondition. Every
-one of them is a prover timeout rather than a counterexample, and the reason is
-recorded with the code -- the model of the pool on entry is reached for with
-'Old, which puts a copy of the pool into every obligation of that loop. A ghost
-parameter would carry it more cheaply, but a ghost formal is not something the
-language has.
-
-That is the one `partial` in the tables above. Everything else in `src/`
-proves, and `heaps_test` passes on the whole catalogue, meld included.
+A `--level=4` run discharges all 3 996 checks, which is every entry in the
+tables above and every `Meld` in them. `heaps_test` passes on the whole
+catalogue.
 
 ### Contracts
 
@@ -227,19 +225,17 @@ gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 `heaps_test` checks results against a proved linear-scan oracle. It also checks
-extraction order and key preservation. The arena is checked differently on two
-points, because with several trees in one array there is no range of slots
-holding a given tree's keys and so no scan to compare against: its oracle is
-kept by the test, and it additionally checks the arena's free count across
+extraction order and key preservation. The leftist heap is checked differently
+on two points, because with several trees in one array there is no range of
+slots holding a given tree's keys and so no scan to compare against: its oracle
+is kept by the test, and it additionally checks the arena's free count across
 every operation, and that a tree an operation did not name comes back with the
 keys it had.
 
-Every implicit heap goes through at `--level=2`. The two leftist units, whose
-tree is a pool of linked nodes rather than an array index, need `--level=4` --
-`Heaps.Leftist` leaves seven checks unproved below it and the arena one; see
-[PROOF.md](PROOF.md) for what those proofs took and what carried them. Below
-`--level=4` the count for `Heaps.Leftist` is higher than the nine of the status
-note above, which are what `--level=4` itself leaves.
+Every implicit heap goes through at `--level=2`. The leftist heap, whose tree
+is an arena of linked nodes rather than an array index, needs `--level=4`; it
+leaves one check unproved below that. See [PROOF.md](PROOF.md) for what those
+proofs took and what carried them.
 
 ## Benchmarks
 
