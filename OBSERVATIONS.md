@@ -21,7 +21,7 @@ Results at `n = 1_000_000`:
 | 8-ary | 8.25 | 124.40 | 69.96 | 5.07 | 27.49 |
 | 16-ary | 6.58 | 171.30 | 89.67 | 4.97 | 20.06 |
 | weak | 18.15 | 170.71 | 86.46 | 3.68 | 22.75 |
-| leftist | 98.39 | 428.02 | 285.98 | 168.67 | 7.67 |
+| leftist | 105.58 | 619.97 | 320.15 | 166.11 | 9.96 |
 | min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
 | interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
 
@@ -173,16 +173,18 @@ filled, and the min-max heap when insertion dominates.
 
 The leftist heap is the first structure here whose tree is a pool of linked
 nodes rather than an array index, and the first whose costs are dominated by
-something other than the number of comparisons. Against the binary heap, in
-the same run:
+something other than the number of comparisons. Its nodes live in an arena
+shared by every tree of the instance, which is what makes its meld a splice;
+the figures below are from the run made after the arena replaced the unit that
+owned its pool. Against the binary heap, in the same run:
 
 | n | `fill` | `drain` | `churn` | `replace-forward` | `insert-asc` | `insert-desc` |
 |---|-------:|--------:|--------:|------------------:|-------------:|--------------:|
-| 1_000 | 43.32 | 146.30 | 82.33 | 12.55 | 69.22 | 6.97 |
-| 10_000 | 63.86 | 214.11 | 113.97 | 43.18 | 98.29 | 6.99 |
-| 100_000 | 81.68 | 294.09 | 158.63 | 84.14 | 130.12 | 7.53 |
-| 1_000_000 | 98.39 | 428.02 | 285.98 | 131.97 | 168.67 | 7.67 |
-| binary at 1_000_000 | 10.09 | 93.17 | 47.91 | 24.55 | 1.96 | 11.47 |
+| 1_000 | 49.41 | 114.19 | 72.24 | 13.06 | 79.82 | 9.56 |
+| 10_000 | 71.54 | 177.48 | 100.55 | 41.14 | 105.87 | 9.50 |
+| 100_000 | 88.32 | 289.73 | 155.10 | 78.70 | 136.38 | 9.68 |
+| 1_000_000 | 105.58 | 619.97 | 320.15 | 126.07 | 166.11 | 9.96 |
+| binary at 1_000_000 | 10.01 | 92.69 | 50.76 | 24.30 | 1.93 | 11.06 |
 
 The two ordered-input columns are the interesting ones, because they disagree
 by a factor of twenty-two with each other and the reason is one comparison.
@@ -192,15 +194,15 @@ asking which of the two roots is smaller.
 `insert-desc` gives the answer "the new one" every time. The new node becomes
 the root, the old heap becomes its right subtree, and the merge is over: one
 comparison, three writes, no walk at all. It is the only genuinely constant
-insertion in the collection, and the numbers say so -- 6.97, 6.99, 7.53, 7.67
-across three decades of size, flat to within a nanosecond, against a binary
-heap that climbs from 6.80 to 11.47 as its sift-up path lengthens. This is the
+insertion in the collection, and the numbers say so -- 9.56, 9.50, 9.68, 9.96
+across three decades of size, flat to within half a nanosecond, against a
+binary heap that climbs from 5.34 to 11.06 as its sift-up path lengthens. This is the
 one column the leftist heap wins, and it wins it by more the larger the heap
 gets.
 
 `insert-asc` gives the opposite answer every time, and the merge then has to
 walk the entire right spine to find where the new largest key belongs:
-168.67 ns/op against 1.96 for the binary heap, a factor of eighty-six. The
+166.11 ns/op against 1.93 for the binary heap, a factor of eighty-six. The
 spine is short -- the leftist condition holds it to at most log2 (n + 1), about
 twenty nodes at `n = 1_000_000` -- so twenty is also roughly the number of
 cache misses, because each step is a dependent load of a node the previous
@@ -211,27 +213,29 @@ every level of it.
 That is the general shape of the rest of the table. A node here carries a key,
 two children, a parent and two counters: twenty-four bytes against the four an
 implicit heap spends, so the pool is six times the size and a root-to-leaf walk
-is six times as likely to leave cache at every step. `drain` is 4.6 times the
-binary heap's and `churn` 6 times, and extraction pays twice over -- it merges
-the two subtrees of the root, walking both spines, and then moves the last node
-of the pool into the hole to keep the used slots a prefix, which touches three
-more nodes scattered anywhere in the array.
+is six times as likely to leave cache at every step. `drain` is 6.7 times the
+binary heap's and `churn` 6.3 times, and extraction pays twice over -- it
+merges the two subtrees of the root, walking both spines, and then puts the
+node it removed back on the free chain, from which the next insertion takes it
+again. Slots are recycled rather than kept a prefix, so a long-lived tree ends
+up scattered across the arena in an order the traversal has no reason to
+follow.
 
 `replace-forward` shows the same thing from the other end. At `n = 1_000` the
-leftist heap is the *faster* of the two, 12.55 against 16.12: the replacement
+leftist heap is the *faster* of the two, 13.06 against 15.85: the replacement
 key is only slightly above the minimum, so it settles near the top of the tree
 and the walk is short. Three decades later the walk is no longer the cost --
-the memory it walks over is -- and the same workload runs 5.4 times slower than
+the memory it walks over is -- and the same workload runs 5.2 times slower than
 the binary heap.
 
 None of this is an argument against the structure, because *this table* cannot
 measure the thing it is for. A leftist heap melds two heaps of any size in
 O(log n); every implicit heap in this collection has to rebuild, at O(n). That
-column is the Meld section below, where both forms of the same tree beat the
-binary heap by four orders of magnitude on the workload the structure is for. What this table
-shows is the price of buying that ability: outside `insert-desc`, an explicit
-tree in a pool is between four and eighty-six times slower than the same tree
-implied by an array index.
+column is the Meld section below, where it beats the binary heap by four orders
+of magnitude on the workload the structure is for. What this table shows is the
+price of buying that ability: outside `insert-desc`, an explicit tree in a pool
+is between five and eighty-six times slower than the same tree implied by an
+array index.
 
 ## Forward replacement
 
@@ -250,7 +254,7 @@ Results for the verified logarithmic structures at `n = 1_000_000`:
 | 8-ary | 50.68 |
 | 16-ary | 76.96 |
 | weak | 98.98 |
-| leftist | 131.97 |
+| leftist | 126.07 |
 | min-max | 61.57 |
 | interval | 36.33 |
 
@@ -353,13 +357,13 @@ Every entry in the catalogue has the operation. Five append and rebuild -- the
 binary heap, the three d-ary instances, the weak heap, the min-max heap and the
 interval heap; three insert the keys one at a time, because their insertion is
 cheap enough that this is the better algorithm -- the unsorted array, the
-block-min directory and the beap; the sorted array merges two runs; and the two
-leftist units splice, one of them after a copy.
+block-min directory and the beap; the sorted array merges two runs; and the
+leftist heap splices.
 
-`leftist` is `Heaps.Leftist`, whose `Heap` object owns its pool, and
-`leftist-arena` is `Heaps.Leftist_Pool`, an instance of the shared-pool unit.
-They hold the same tree and differ only in who owns the pool, which is exactly
-what this column was built to price.
+`leftist` is `Heaps.Leftist_Pool`, an instance of the arena. The catalogue used
+to carry a second unit holding the same tree in a pool of its own, and this
+column is what decided which of the two to keep; the subsection at the end of
+this chapter has that comparison and the figures it rested on.
 
 A single meld is too fast to time against the cost of building its operands, so
 both scenarios meld sixteen heaps into one accumulator and time the sixteen
@@ -409,19 +413,17 @@ one-key heaps into it.
 | unsorted | 10 000 | 461.88 | 3.13 |
 | sorted | 1 000 | 776.88 | 465.63 |
 | sorted | 10 000 | 9 917.63 | 5 166.94 |
-| leftist | 1 000 | 499.38 | 76.25 |
-| leftist | 10 000 | 4 526.94 | 120.00 |
-| leftist | 100 000 | 43 408.13 | 95.63 |
-| leftist | 1 000 000 | 436 532.32 | 131.25 |
-| leftist-arena | 1 000 | 107.50 | 66.25 |
-| leftist-arena | 10 000 | 159.38 | 107.50 |
-| leftist-arena | 100 000 | 295.63 | 89.38 |
-| leftist-arena | 1 000 000 | 1 704.44 | 134.38 |
+| leftist | 1 000 | 93.13 | 65.00 |
+| leftist | 10 000 | 152.50 | 103.75 |
+| leftist | 100 000 | 281.25 | 83.75 |
+| leftist | 1 000 000 | 1 439.38 | 127.50 |
 
 This table is from a later run than the main table above, re-measured in full
 when the remaining six melds were added so that every figure in it comes from
 one run. The machine and the switches are the same, and the entries that were
-already there reproduce their earlier figures within about 15%.
+already there reproduce their earlier figures within about 15%. The `leftist`
+row is later still: it was measured again when the arena became the only
+leftist unit, and it replaces two rows, one per unit.
 
 The single- and double-digit entries deserve a caveat the rest do not. A
 measurement here is sixteen melds, so at those magnitudes the figure is a few
@@ -522,20 +524,23 @@ the same asymptotic cost. A merge run backwards is two sequential reads and one
 sequential write, which is the friendliest memory pattern here; a bottom-up
 rebuild jumps between a node and its children.
 
-### The two leftist units, which is what the column was for
+### Who owns the pool, which is what the column was for
 
-`Heaps.Leftist` and `Heaps.Leftist_Arena` hold the same tree. The first owns
-its pool, so a meld has to copy `From`'s nodes into the free slots at the end
-of `Into`'s pool, shifting every index, before the splice; the second shares
-one pool, so the splice is the whole operation. The two columns price that copy
-exactly.
+The catalogue carried two leftist units for a while. Both held the same tree
+and differed only in who owned the node pool: `Heaps.Leftist` as it is now
+shares one arena between every tree of the instance, and the unit that has
+since been dropped gave each `Heap` object a pool of its own, so a meld had to
+copy `From`'s nodes into the free slots at the end of `Into`'s pool, shifting
+every index, before the splice. The two columns priced that copy exactly, and
+the figures below are the measurement the decision was made on. They are from
+the run in which both units still existed.
 
-On `meld-into-full` the copy is one node, and the two are indistinguishable:
+On `meld-into-full` the copy is one node, and the two were indistinguishable:
 76.25, 120.00, 95.63, 131.25 for the private pool against 66.25, 107.50, 89.38,
 134.38 for the arena. Both are flat in `n` -- three decades cost a factor under
 two, which is what O(log n) looks like on a log scale of sizes -- and against
 the binary heap's 1 641 241 at `n = 1_000_000` that is a factor of twelve
-thousand. **The private pool costs nothing at all when the operand is small**,
+thousand. **The private pool cost nothing at all when the operand was small**,
 which was not obvious before the measurement and is the more useful half of the
 result: the API concession the arena demands buys nothing on this workload.
 
@@ -543,25 +548,25 @@ On `meld-accumulate` the copy is the whole operation: 436 532 against the
 arena's 1 704 at `n = 1_000_000`, a factor of 256, and the private pool's
 figure grows linearly in `n` -- 499, 4 527, 43 408, 436 532, a clean factor of
 ten per decade -- while the arena's does not. That is O(m) against O(log n) laid
-out over four decades.
+out over four decades, and it is why only one of the two units is still here.
 
-Even so, the copying unit beats every rebuilding heap on that scenario too:
+Even so, the copying unit beat every rebuilding heap on that scenario too:
 436 532 against the binary heap's 1 392 644 and the min-max heap's 5 835 120.
 Copying `n / 16` nodes is less work than rebuilding `n` of them, so a leftist
 heap that has to copy is still ahead of an implicit heap that has to rebuild --
 by a factor of three against the best of them and thirteen against the worst.
-The arena is a further factor of 256 beyond that.
+The arena is a further two orders of magnitude beyond that.
 
 `meld-accumulate` on the arena is worth a second look, because it is *not*
-flat: 107.50, 159.38, 295.63, 1 704.44. That is not the algorithm. The operands
-grow with `n`, so the two right spines the merge walks grow from about six
-nodes to about sixteen -- a factor under three, against the factor of sixteen
-measured. The rest is the pool. A node is 24 bytes, so the live nodes are 240 KB
-at `n = 10_000` and 24 MB at `n = 1_000_000`, and the jump between the last two
-rows is where the arena stops fitting in cache. A merge is a pointer walk, and
-the main table's `leftist` row reports the same effect on the same structure:
-what an explicit tree costs is not the instruction count but the memory it
-walks over.
+flat: in the current table 93.13, 152.50, 281.25, 1 439.38. That is not the
+algorithm. The operands grow with `n`, so the two right spines the merge walks
+grow from about six nodes to about sixteen -- a factor under three, against the
+factor of fifteen measured. The rest is the pool. A node is 24 bytes, so the
+live nodes are 240 KB at `n = 10_000` and 24 MB at `n = 1_000_000`, and the
+jump between the last two rows is where the arena stops fitting in cache. A
+merge is a pointer walk, and the main table's `leftist` row reports the same
+effect on the same structure: what an explicit tree costs is not the
+instruction count but the memory it walks over.
 
 The one thing the table cannot show is that a meld in the arena moves nothing.
 The arena's free count is unchanged across a meld -- no node is allocated,

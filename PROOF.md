@@ -585,3 +585,51 @@ is precisely `Merge`'s precondition, which was written for the merge inside
 The general rule this is a case of: a large proof obligation is not the sum of
 its parts, so the cheapest thing to try when assertions that used to pass stop
 passing is not another assertion but a subprogram boundary.
+
+# Dropping the private pool
+
+The sections above are written against a catalogue that held two leftist units,
+one with a pool per heap and one with a pool per instantiation, and they name
+the first of them `Heaps.Leftist`. It is not in the catalogue any more: the
+arena took its name, and the sections that discuss the private pool now discuss
+a unit that was deleted. They are left as they were written, because what they
+record is what those proofs cost, and that does not stop being true when the
+code goes.
+
+The reason for the deletion is measured rather than formal -- an O(m) copy in
+the operation the structure exists for, priced in OBSERVATIONS.md -- but the
+proof effort points the same way, and it is worth recording why.
+
+## The obligations of a private pool are the obligations of a copy
+
+A meld between two pools is a copy and a splice. The splice was free: every
+clause of `Well_Linked` is about a node and its immediate neighbours, so a
+copied node satisfies it exactly because the original did, and `Merge`'s
+precondition -- the pool holds a forest of exactly two trees, and here are
+their roots -- was already written for the merge inside `Extract_Min`. The copy
+was the whole cost, in the proof as in the run time, and its last nine checks
+never came down.
+
+What made them expensive was stating the model of the pool on entry. The copy
+loop's postcondition compares the new model against the old one, and there is
+nowhere cheap to keep the old one:
+
+- `Model (Into)'Old` applies an attribute to a function of the whole record, so
+  a copy of the pool travels through every obligation of the loop;
+- a ghost parameter carrying it in would keep the obligations small, and SPARK
+  has no ghost formal of a non-ghost subprogram (LRM 6.9(7));
+- ghost package state would work and is what the arena does -- but a heap that
+  owns its pool has no package state to put it in, which is the point of the
+  shape.
+
+So the private pool ends up paying, in every obligation of its meld, for the
+one thing the arena gets for nothing. That is the same trade the benchmark
+measures, seen from the other side: what the arena buys with the loss of a
+first-class object is a place to put the state that both the code and the proof
+need.
+
+## The rule
+
+When a structure's defining operation spans two containers, the containers are
+the wrong boundary. Put the storage where the operation is, and the proof
+follows the algorithm rather than fighting it.
