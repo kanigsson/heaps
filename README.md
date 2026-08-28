@@ -195,12 +195,14 @@ checks:
 ### Current status
 
 The catalogue is proved, `Meld` included, with one exception:
-`Heaps.Leftist.Meld` is unfinished. Its body does not compile as it stands --
-the model of the pool on entry is passed to `Graft` as a ghost parameter, which
-is not a thing Ada has -- and the last complete run of the previous state left
-thirteen checks unproved between `Graft` and `Meld`. Everything else in `src/`
-goes through, so the tree as a whole does not build until that one body is
-settled.
+`Heaps.Leftist.Meld` is not finished and is not here. It builds and passes the
+tests on the `leftist-meld` branch, but a `--level=4` run leaves nine checks
+unproved between the copy of one pool into another and the postcondition of the
+meld itself -- every one of them a prover timeout rather than a counterexample
+-- so it stays on that branch until they are discharged.
+
+The tests and benchmarks on this branch already call it, so `bench.gpr` does
+not build here; the whole of `src/` proves.
 
 ### Contracts
 
