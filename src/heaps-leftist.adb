@@ -14,6 +14,11 @@ pragma Assertion_Policy (Ghost          => Ignore,
                          Assert         => Ignore,
                          Loop_Invariant => Ignore);
 
+--  Graft states its model postcondition behind an and then, so the 'Old in it
+--  is potentially unevaluated.
+
+pragma Unevaluated_Use_Of_Old (Allow);
+
 package body Heaps.Leftist with SPARK_Mode is
 
    procedure Merge
@@ -237,6 +242,300 @@ package body Heaps.Leftist with SPARK_Mode is
 
       Models.Lemma_Same_Prefix (Old_Keys, H.Keys, Slot - 1);
    end Insert;
+
+   -----------
+   -- Graft --
+   -----------
+
+   procedure Graft
+     (Into   : in out Heap;
+      From   : Heap;
+      B_Root : out Extended_Index)
+     with Pre  => Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then From.Count <= Into.Capacity - Into.Count,
+          Post => Well_Linked (Into)
+                  and then Into.Count = Into.Count'Old + From.Count
+                  and then Into.Root = Into.Root'Old
+                  and then B_Root <= Into.Count
+                  and then (if Into.Root /= 0 and then B_Root /= 0
+                            then Into.Root /= B_Root)
+                  and then (if Into.Root /= 0
+                            then Into.Links (Into.Root).Parent = 0)
+                  and then (if B_Root /= 0
+                            then Into.Links (B_Root).Parent = 0)
+                  and then (if Into.Count /= 0
+                            then Into.Root /= 0 or else B_Root /= 0)
+                  and then Size_Of (Into, Into.Root)
+                           + Size_Of (Into, B_Root) = Into.Count
+                  and then (for all X in 1 .. Into.Count =>
+                              (if Into.Links (X).Parent = 0
+                               then X = Into.Root or else X = B_Root))
+                  and then Model (Into) = Model (Into)'Old + Model (From);
+   --  Copy the nodes of From into the free slots at the end of Into's pool,
+   --  translating every index by the number of slots already in use, and
+   --  return the slot the root of the copy landed in. The pool then holds a
+   --  forest of exactly two trees, which is what Merge is given.
+   --
+   --  This is a subprogram of its own rather than the first half of Meld
+   --  because its proof and the merge's have nothing to say to each other:
+   --  keeping them apart is what keeps each proof obligation small enough to
+   --  discharge.
+   --
+   --  The model of the state on entry is reached for with 'Old, which is not
+   --  free here: the attribute is applied to a function of the whole record,
+   --  so a copy of the pool travels through every proof obligation of the
+   --  copy loop. Handing that model in as a ghost parameter instead would
+   --  keep the obligations smaller, but a ghost formal is not something the
+   --  language has.
+
+   procedure Graft
+     (Into   : in out Heap;
+      From   : Heap;
+      B_Root : out Extended_Index)
+   is
+      Old_Keys  : constant Key_Array  := Into.Keys with Ghost;
+      Old_Links : constant Link_Array := Into.Links with Ghost;
+
+      Cap   : constant Extended_Index := Into.Capacity;
+      Base  : constant Extended_Index := Into.Count;
+      Extra : constant Extended_Index := From.Count;
+      Total : constant Extended_Index := Base + Extra;
+
+      Prev : Key_Array (1 .. Cap) with Ghost;
+      --  See the comment on the homonym in Heaps.Unsorted.Meld
+   begin
+      --  Into.Count is left alone until the copy is complete, so that no
+      --  intermediate state has a link pointing at a slot that is in use but
+      --  not yet filled.
+
+      for J in 1 .. Extra loop
+         Prev := Into.Keys;
+
+         Into.Keys (Base + J) := From.Keys (J);
+         Into.Links (Base + J) :=
+           (Left   => (if From.Links (J).Left = 0
+                       then 0 else Base + From.Links (J).Left),
+            Right  => (if From.Links (J).Right = 0
+                       then 0 else Base + From.Links (J).Right),
+            Parent => (if From.Links (J).Parent = 0
+                       then 0 else Base + From.Links (J).Parent),
+            Size   => From.Links (J).Size,
+            Dist   => From.Links (J).Dist);
+
+         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + J - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev, Base + J - 1),
+            Models.Occurrences (Into.Keys, Base + J - 1),
+            From.Keys (J));
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Old_Keys, Base),
+            Models.Occurrences (From.Keys, J - 1),
+            From.Keys (J));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Old_Keys, Base));
+
+         pragma Loop_Invariant (Into.Count = Base);
+         pragma Loop_Invariant (Into.Root = Into.Root'Loop_Entry);
+         pragma Loop_Invariant
+           (for all M in 1 .. Base => Into.Keys (M) = Old_Keys (M));
+         pragma Loop_Invariant
+           (for all M in 1 .. Base => Into.Links (M) = Old_Links (M));
+         pragma Loop_Invariant
+           (for all M in 1 .. J => Into.Keys (Base + M) = From.Keys (M));
+         pragma Loop_Invariant
+           (for all M in 1 .. J =>
+              Into.Links (Base + M) =
+                (Left   => (if From.Links (M).Left = 0
+                            then 0 else Base + From.Links (M).Left),
+                 Right  => (if From.Links (M).Right = 0
+                            then 0 else Base + From.Links (M).Right),
+                 Parent => (if From.Links (M).Parent = 0
+                            then 0 else Base + From.Links (M).Parent),
+                 Size   => From.Links (M).Size,
+                 Dist   => From.Links (M).Dist));
+         pragma Loop_Invariant
+           (Models.Occurrences (Into.Keys, Base + J)
+            = Models.Occurrences (Old_Keys, Base)
+              + Models.Occurrences (From.Keys, J));
+      end loop;
+
+      if Extra = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Old_Keys, Base));
+      end if;
+
+      Into.Count := Total;
+      B_Root := (if From.Root = 0 then 0 else Base + From.Root);
+
+      --  Every clause of Well_Linked is about a node and its immediate
+      --  neighbours, so a copied node satisfies it exactly because the
+      --  original did, with each index shifted; the nodes that were already
+      --  there are untouched. Each family of clauses is established for one
+      --  half of the pool at a time, which keeps every obligation small.
+
+      --  What Well_Linked and Is_Heap say about each operand, spelled out on
+      --  that operand's own indices before anything is shifted.
+
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           From.Links (M).Left in 0 .. Extra
+           and then From.Links (M).Right in 0 .. Extra
+           and then From.Links (M).Parent in 0 .. Extra
+           and then (if M /= From.Root then From.Links (M).Parent /= 0));
+      pragma Assert
+        (for all M in 1 .. Base =>
+           Into.Links (M).Left in 0 .. Base
+           and then Into.Links (M).Right in 0 .. Base
+           and then Into.Links (M).Parent in 0 .. Base
+           and then (if M /= Into.Root then Into.Links (M).Parent /= 0));
+
+      pragma Assert
+        (for all X in 1 .. Base =>
+           Size_Of (Into, X) = Old_Links (X).Size
+           and then Dist_Of (Into, X) = Old_Links (X).Dist);
+      pragma Assert
+        (for all X in 1 .. Extra =>
+           Size_Of (Into, Base + X) = From.Links (X).Size
+           and then Dist_Of (Into, Base + X) = From.Links (X).Dist);
+
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           Into.Links (Base + M).Left in 0 .. Total
+           and then Into.Links (Base + M).Right in 0 .. Total
+           and then Into.Links (Base + M).Parent in 0 .. Total);
+
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           (Into.Links (Base + M).Left = 0) = (From.Links (M).Left = 0)
+           and then (Into.Links (Base + M).Right = 0)
+                    = (From.Links (M).Right = 0)
+           and then (Into.Links (Base + M).Parent = 0)
+                    = (From.Links (M).Parent = 0));
+
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           Size_Of (Into, Into.Links (Base + M).Left)
+           = Size_Of (From, From.Links (M).Left)
+           and then Size_Of (Into, Into.Links (Base + M).Right)
+                    = Size_Of (From, From.Links (M).Right)
+           and then Dist_Of (Into, Into.Links (Base + M).Left)
+                    = Dist_Of (From, From.Links (M).Left)
+           and then Dist_Of (Into, Into.Links (Base + M).Right)
+                    = Dist_Of (From, From.Links (M).Right));
+
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           (if Into.Links (Base + M).Left /= 0
+            then Into.Links (Into.Links (Base + M).Left).Parent = Base + M
+                 and then Into.Keys (Base + M)
+                          <= Into.Keys (Into.Links (Base + M).Left)
+                 and then Into.Links (Base + M).Left
+                          /= Into.Links (Base + M).Right)
+           and then (if Into.Links (Base + M).Right /= 0
+                     then Into.Links
+                            (Into.Links (Base + M).Right).Parent = Base + M
+                          and then Into.Keys (Base + M)
+                                   <= Into.Keys
+                                        (Into.Links (Base + M).Right))
+           and then (if Into.Links (Base + M).Parent /= 0
+                     then Into.Links
+                            (Into.Links (Base + M).Parent).Left = Base + M
+                          or else Into.Links
+                                    (Into.Links (Base + M).Parent).Right
+                                  = Base + M));
+
+      pragma Assert
+        (for all M in 1 .. Base =>
+           (if Into.Links (M).Left /= 0
+                     then Into.Links (Into.Links (M).Left).Parent = M
+                          and then Into.Keys (M)
+                                   <= Into.Keys (Into.Links (M).Left)
+                          and then Into.Links (M).Left
+                                   /= Into.Links (M).Right)
+           and then (if Into.Links (M).Right /= 0
+                     then Into.Links (Into.Links (M).Right).Parent = M
+                          and then Into.Keys (M)
+                                   <= Into.Keys (Into.Links (M).Right))
+           and then (if Into.Links (M).Parent /= 0
+                     then Into.Links (Into.Links (M).Parent).Left = M
+                          or else Into.Links (Into.Links (M).Parent).Right
+                                  = M));
+
+      for I in 1 .. Total loop
+         pragma Loop_Invariant
+           (for all P in 1 .. I =>
+              Into.Links (P).Left in 0 .. Total
+              and then Into.Links (P).Right in 0 .. Total
+              and then Into.Links (P).Parent in 0 .. Total);
+      end loop;
+
+      for I in 1 .. Total loop
+         pragma Loop_Invariant
+           (for all P in 1 .. I =>
+              Into.Links (P).Size
+              = 1 + Size_Of (Into, Into.Links (P).Left)
+                  + Size_Of (Into, Into.Links (P).Right)
+              and then Into.Links (P).Dist
+                       = 1 + Dist_Of (Into, Into.Links (P).Right)
+              and then Into.Links (P).Dist <= Into.Links (P).Size
+              and then Dist_Of (Into, Into.Links (P).Left)
+                       >= Dist_Of (Into, Into.Links (P).Right));
+      end loop;
+
+      for I in 1 .. Total loop
+         pragma Loop_Invariant
+           (for all P in 1 .. I =>
+              (if Into.Links (P).Left /= 0
+               then Into.Links (Into.Links (P).Left).Parent = P
+                    and then Into.Keys (P)
+                             <= Into.Keys (Into.Links (P).Left)
+                    and then Into.Links (P).Left /= Into.Links (P).Right)
+              and then (if Into.Links (P).Right /= 0
+                        then Into.Links (Into.Links (P).Right).Parent = P
+                             and then Into.Keys (P)
+                                      <= Into.Keys (Into.Links (P).Right))
+              and then (if Into.Links (P).Parent /= 0
+                        then Into.Links (Into.Links (P).Parent).Left = P
+                             or else Into.Links
+                                       (Into.Links (P).Parent).Right = P));
+      end loop;
+
+      pragma Assert (Well_Linked (Into));
+
+      --  The two roots are the only parentless nodes left.
+
+      pragma Assert
+        (for all M in 1 .. Base =>
+           (if Into.Links (M).Parent = 0 then M = Into.Root));
+      pragma Assert
+        (for all M in 1 .. Extra =>
+           (if Into.Links (Base + M).Parent = 0 then Base + M = B_Root));
+
+      for X in 1 .. Total loop
+         pragma Loop_Invariant
+           (for all Y in 1 .. X =>
+              (if Into.Links (Y).Parent = 0
+               then Y = Into.Root or else Y = B_Root));
+      end loop;
+   end Graft;
+
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      B_Root   : Extended_Index;
+      New_Root : Extended_Index;
+   begin
+      Graft (Into, From, B_Root);
+
+      --  The pool now holds a forest of two trees, and merging them leaves a
+      --  single one, exactly as an insertion does.
+
+      Merge (Into, Into.Root, B_Root, New_Root);
+      Into.Root := New_Root;
+
+      Clear (From);
+   end Meld;
 
    -----------------
    -- Extract_Min --

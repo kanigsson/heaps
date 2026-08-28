@@ -197,6 +197,25 @@ package Heaps.Leftist with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Heap (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --
+   --  A heap here owns its pool, so the nodes of From are not where Into can
+   --  reach them: they are copied into the free slots at the end of Into's
+   --  pool, shifted by the number of slots already in use, and the two roots
+   --  are then merged. The merge is the O(log n) splice a leftist heap exists
+   --  for, but the copy in front of it is O(m), which is the whole cost of
+   --  keeping the pool private. Heaps.Leftist_Arena is the same tree with the
+   --  pool shared, where the copy disappears and the meld is the splice
+   --  alone.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)
