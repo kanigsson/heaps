@@ -125,6 +125,219 @@ package body Heaps.Sorted with SPARK_Mode is
          Before (Hole));
    end Insert;
 
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Old_Keys : constant Key_Array := Into.Keys with Ghost;
+      Cap      : constant Extended_Index := Into.Capacity;
+
+      Base  : constant Extended_Index := Into.Last;
+      Extra : constant Extended_Index := From.Last;
+      Total : constant Extended_Index := Base + Extra;
+
+      Whole : constant KM.Multiset :=
+        Models.Occurrences (Old_Keys, Base)
+        + Models.Occurrences (From.Keys, Extra)
+      with Ghost;
+
+      Prev : Key_Array (1 .. Cap) with Ghost;
+      --  See the comment on the homonym in Insert
+
+      I : Extended_Index := Base;
+      J : Extended_Index := Extra;
+      --  The smallest key still to be taken from each run sits at these two
+      --  slots; the runs decrease towards the front, so both walk backwards.
+
+      K : Extended_Index := Total;
+      --  The slot the next key goes into. It is always I + J, hence always
+      --  above I, which is why the output never overwrites an unread key.
+
+      Taken : Key_Type;
+      --  The key the current step moves, whichever run it came from
+
+      From_Side : Boolean;
+      --  Which of the two runs the current step reads
+
+      Head : KM.Multiset with Ghost;
+      Done : KM.Multiset with Ghost;
+      Rest : KM.Multiset with Ghost;
+      --  The merged region including the key just written, that region
+      --  without it, and the latter together with what is left of Into's own
+      --  run. SPARK does not allow a non-scalar declaration ahead of a loop
+      --  invariant, hence the hoisting.
+   begin
+      Models.Lemma_Sum_Empty_Left
+        (Models.Occurrences (Old_Keys, Base)
+         + Models.Occurrences (From.Keys, Extra));
+
+      while J > 0 loop
+         Prev := Into.Keys;
+
+         --  Take the smaller of the two remaining minima and put it at the
+         --  far end of what is left to fill. K is I + J, so the slot written
+         --  always sits above the part of Into's own run still to be read.
+
+         From_Side := I = 0 or else Into.Keys (I) > From.Keys (J);
+
+         if From_Side then
+            Taken := From.Keys (J);
+         else
+            Taken := Into.Keys (I);
+         end if;
+
+         Into.Keys (K) := Taken;
+
+         if From_Side then
+            J := J - 1;
+         else
+            I := I - 1;
+         end if;
+
+         K := K - 1;
+
+         pragma Assert (Into.Keys (K + 1) = Taken);
+         pragma Assert (if K + 2 <= Total then Taken >= Into.Keys (K + 2));
+         pragma Assert (if not From_Side then Taken = Old_Keys (I + 1));
+         pragma Assert (if From_Side then Taken = From.Keys (J + 1));
+
+         --  The written slot is below the region already merged, so that
+         --  region is unchanged and simply gains one key at its low end.
+
+         Done := Models.Occurrences_In (Prev, K + 2, Total);
+         Rest := Done + Models.Occurrences (Old_Keys, I);
+
+         Models.Lemma_Range_Same (Prev, Into.Keys, K + 2, Total);
+         Models.Lemma_Range_Peel (Into.Keys, K + 1, Total);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences_In (Into.Keys, K + 2, Total), Done, Taken);
+
+         Head := Models.Occurrences_In (Into.Keys, K + 1, Total);
+         pragma Assert (Head = KM.Add (Done, Taken));
+
+         --  On the goal side, that one Add travels out through both sums.
+
+         Models.Lemma_Sum_Congruent
+           (Head, KM.Add (Done, Taken), Models.Occurrences (Old_Keys, I));
+         Models.Lemma_Sum_Add_Left
+           (Done, Models.Occurrences (Old_Keys, I), Taken);
+         pragma Assert
+           (Head + Models.Occurrences (Old_Keys, I) = KM.Add (Rest, Taken));
+         Models.Lemma_Sum_Congruent
+           (Head + Models.Occurrences (Old_Keys, I),
+            KM.Add (Rest, Taken),
+            Models.Occurrences (From.Keys, J));
+
+         --  And on the other side the run the key came from loses it, which
+         --  is the same Add coming out of the same place.
+
+         if From_Side then
+            pragma Assert
+              (Whole = Rest + Models.Occurrences (From.Keys, J + 1));
+            Models.Lemma_Sum_Add
+              (Rest, Models.Occurrences (From.Keys, J), Taken);
+            Models.Lemma_Sum_Add_Left
+              (Rest, Models.Occurrences (From.Keys, J), Taken);
+            pragma Assert
+              (KM.Add (Rest, Taken) + Models.Occurrences (From.Keys, J)
+               = Whole);
+         else
+            pragma Assert
+              (Whole = Done + Models.Occurrences (Old_Keys, I + 1)
+                       + Models.Occurrences (From.Keys, J));
+            Models.Lemma_Sum_Add
+              (Done, Models.Occurrences (Old_Keys, I), Taken);
+            Models.Lemma_Sum_Congruent
+              (Done + Models.Occurrences (Old_Keys, I + 1),
+               KM.Add (Rest, Taken),
+               Models.Occurrences (From.Keys, J));
+            pragma Assert
+              (KM.Add (Rest, Taken) + Models.Occurrences (From.Keys, J)
+               = Whole);
+         end if;
+
+         pragma Assert
+           (KM.Add (Rest, Taken) + Models.Occurrences (From.Keys, J) = Whole);
+         pragma Assert
+           (Head
+            + Models.Occurrences (Old_Keys, I)
+            + Models.Occurrences (From.Keys, J)
+            = Whole);
+
+         pragma Loop_Invariant (Into.Last = Base);
+         pragma Loop_Invariant (I <= Base and J <= Extra and K = I + J);
+         pragma Loop_Invariant
+           (Prev'First = 1 and Prev'Last = Into.Keys'Last);
+         pragma Loop_Invariant
+           (for all M in 1 .. I => Into.Keys (M) = Old_Keys (M));
+
+         --  The merged region is in order ...
+
+         pragma Loop_Invariant
+           (for all M in K + 2 .. Total =>
+              Into.Keys (M - 1) >= Into.Keys (M));
+
+         --  ... and everything still to be read is at least as large as the
+         --  key at its low end, which is what lets the two parts be joined.
+
+         pragma Loop_Invariant
+           (if I >= 1 then Into.Keys (K + 1) <= Old_Keys (I));
+         pragma Loop_Invariant
+           (if J >= 1 then Into.Keys (K + 1) <= From.Keys (J));
+
+         pragma Loop_Invariant
+           (Models.Occurrences_In (Into.Keys, K + 1, Total)
+            + Models.Occurrences (Old_Keys, I)
+            + Models.Occurrences (From.Keys, J)
+            = Whole);
+
+         pragma Loop_Variant (Decreases => K);
+      end loop;
+
+      --  From is exhausted, so what is left of Into's own run is already
+      --  where it belongs and the two regions meet at slot I.
+
+      Into.Last := Total;
+
+      pragma Assert (for all M in 1 .. I => Into.Keys (M) = Old_Keys (M));
+      pragma Assert (for all M in 2 .. I => Into.Keys (M - 1) >= Into.Keys (M));
+      pragma Assert
+        (if I >= 1 and then I < Total
+         then Into.Keys (I) >= Into.Keys (I + 1));
+      pragma Assert
+        (for all M in I + 2 .. Total => Into.Keys (M - 1) >= Into.Keys (M));
+      pragma Assert (Is_Sorted (Into));
+
+      pragma Assert (K = I);
+
+      --  What the loop was carrying is the model of the two regions; with
+      --  From exhausted its third term is empty, and the regions meet at I.
+
+      Models.Lemma_Sum_Empty
+        (Models.Occurrences_In (Into.Keys, I + 1, Total)
+         + Models.Occurrences (Old_Keys, I));
+      Models.Lemma_Sum_Empty_Left (Models.Occurrences (Old_Keys, I));
+      Models.Lemma_Sum_Empty (Models.Occurrences (Old_Keys, Base));
+      pragma Assert
+        (Models.Occurrences_In (Into.Keys, I + 1, Total)
+         + Models.Occurrences (Old_Keys, I) = Whole);
+
+      Models.Lemma_Same_Prefix (Old_Keys, Into.Keys, I);
+      Models.Lemma_Range_Split (Into.Keys, I, Total);
+      Models.Lemma_Sum_Congruent
+        (Models.Occurrences (Into.Keys, I),
+         Models.Occurrences (Old_Keys, I),
+         Models.Occurrences_In (Into.Keys, I + 1, Total));
+      Models.Lemma_Sum_Symmetric
+        (Models.Occurrences (Old_Keys, I),
+         Models.Occurrences_In (Into.Keys, I + 1, Total));
+
+      pragma Assert (Model (Into) = Whole);
+
+      Clear (From);
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------

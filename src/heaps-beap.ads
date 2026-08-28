@@ -185,6 +185,27 @@ package Heaps.Beap with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Heap (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --
+   --  Unlike the tree heaps, the beap does not append and rebuild. A bottom-up
+   --  rebuild of a beap is not linear: a node in layer L sifts down through
+   --  the sqrt (n) - L layers below it, which sums to O (n ** 1.5). Inserting
+   --  the keys one at a time costs O (m sqrt (n)) instead, and that is smaller
+   --  for every m. The beap sides with the block-min directory here rather
+   --  than with the implicit trees, and for the same reason: when insertion is
+   --  cheap enough, repeated insertion *is* the better meld.
+   --
+   --  Is_Heap (From) is required only for uniformity with the rest of the
+   --  family. The insertions do not depend on it.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)

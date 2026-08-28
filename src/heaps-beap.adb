@@ -566,6 +566,40 @@ package body Heaps.Beap with SPARK_Mode is
       Lemma_Hole_Filled (Before, H.Keys, Hole, H.Last, Start);
    end Insert;
 
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Base  : constant Extended_Index := Into.Last;
+      Start : constant KM.Multiset := Model (Into) with Ghost;
+   begin
+      --  One insertion per key of From. Each of them adds its key to Into's
+      --  model, and the accumulated Adds are exactly the model of the prefix
+      --  of From that has been consumed so far.
+
+      for I in 1 .. From.Last loop
+         Insert (Into, From.Keys (I));
+
+         Models.Lemma_Sum_Add
+           (Start, Models.Occurrences (From.Keys, I - 1), From.Keys (I));
+         Models.Lemma_Sum_Empty (Start);
+
+         pragma Loop_Invariant (Is_Heap (Into));
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (Model (Into) = Start + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      --  With no keys to copy the sum is Into's own model.
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Start);
+      end if;
+
+      Clear (From);
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------

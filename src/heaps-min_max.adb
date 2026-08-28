@@ -34,12 +34,23 @@ package body Heaps.Min_Max with SPARK_Mode is
    --  (sift-down), the ones its same-side ancestors make about it (sift-up),
    --  or all of them at once (a key just appended as a leaf).
 
-   function Heap_Except_Below (H : Heap; I : Index) return Boolean is
-     (for all A in 1 .. H.Last =>
+   subtype Claim_Bound is Positive range 1 .. Max_Capacity + 1;
+   --  A lower bound on the indices whose claims are in force. It reaches one
+   --  past the largest index so that a build can start from "no claim at all".
+
+   function Heap_Except_Below
+     (H : Heap; I : Extended_Index; N : Claim_Bound) return Boolean
+   is
+     (for all A in N .. H.Last =>
         (for all D in 1 .. H.Last =>
            (if Is_Ancestor (A, D) and then A /= I
             then Ordered (Min_Level (A), H.Keys (A), H.Keys (D)))))
      with Ghost;
+   --  N is the lowest index whose claims are in force. A sift works with
+   --  N = 1, where every node in the array claims its subtree; a bottom-up
+   --  build works its way down from N = H.Last + 1, where none of them does
+   --  yet. Passing I = 0 suspends no claim at all, which is how the two ends
+   --  of a build step are stated: Heap_Except_Below (H, 0, 1) is Is_Heap (H).
 
    function Heap_Except_Above (H : Heap; I : Index) return Boolean is
      (for all A in 1 .. H.Last =>
@@ -98,14 +109,16 @@ package body Heaps.Min_Max with SPARK_Mode is
                                then After.Keys (M) = Before.Keys (M))),
           Post => Heap_Except_Above (After, Grandparent (I));
 
-   procedure Lemma_Step_Down_Near (Before, After : Heap; I, M : Index)
+   procedure Lemma_Step_Down_Near
+     (Before, After : Heap; I, M : Index; N : Claim_Bound)
      with Ghost,
           Pre  => I < M
                   and then M <= Before.Last
+                  and then N <= I
                   and then Parent (M) = I
                   and then After.Last = Before.Last
                   and then After.Capacity = Before.Capacity
-                  and then Heap_Except_Below (Before, I)
+                  and then Heap_Except_Below (Before, I, N)
                   and then (for all J in 1 .. Before.Last =>
                               (if Is_Near (I, J)
                                then Ordered (Min_Level (I),
@@ -119,21 +132,23 @@ package body Heaps.Min_Max with SPARK_Mode is
                   and then (for all J in 1 .. Before.Last =>
                               (if J /= I and J /= M
                                then After.Keys (J) = Before.Keys (J))),
-          Post => Heap_Except_Below (After, M);
+          Post => Heap_Except_Below (After, M, N);
    --  Exchanging a node with its best child. The key that comes down is on
    --  the other side, so the descent continues with the comparison direction
    --  reversed; it stops at once, because everything below a best child is
    --  squeezed between that child and the key that just replaced it.
 
-   procedure Lemma_Step_Down_Far (Before, After : Heap; I, M : Index)
+   procedure Lemma_Step_Down_Far
+     (Before, After : Heap; I, M : Index; N : Claim_Bound)
      with Ghost,
           Pre  => I < M
                   and then M <= Before.Last
+                  and then N <= I
                   and then Grandparent (M) = I
                   and then Parent (M) /= I
                   and then After.Last = Before.Last
                   and then After.Capacity = Before.Capacity
-                  and then Heap_Except_Below (Before, I)
+                  and then Heap_Except_Below (Before, I, N)
                   and then (for all J in 1 .. Before.Last =>
                               (if Is_Near (I, J)
                                then Ordered (Min_Level (I),
@@ -156,7 +171,7 @@ package body Heaps.Min_Max with SPARK_Mode is
                   and then (for all J in 1 .. Before.Last =>
                               (if J /= I and J /= M and J /= Parent (M)
                                then After.Keys (J) = Before.Keys (J))),
-          Post => Heap_Except_Below (After, M);
+          Post => Heap_Except_Below (After, M, N);
    --  Exchanging a node with its best grandchild, then repairing the max node
    --  in between if the key that came down overshot it
 
@@ -174,16 +189,18 @@ package body Heaps.Min_Max with SPARK_Mode is
                                              H.Keys (I))),
           Post => Is_Heap (H);
 
-   procedure Lemma_Settled_Below (H : Heap; I : Index)
+   procedure Lemma_Settled_Below
+     (H : Heap; I : Index; N : Claim_Bound)
      with Ghost,
           Pre  => I <= H.Last
-                  and then Heap_Except_Below (H, I)
+                  and then N <= I
+                  and then Heap_Except_Below (H, I, N)
                   and then (for all J in 1 .. H.Last =>
                               (if Is_Near (I, J)
                                then Ordered (Min_Level (I),
                                              H.Keys (I),
                                              H.Keys (J)))),
-          Post => Is_Heap (H);
+          Post => Heap_Except_Below (H, 0, N);
 
    procedure Lemma_Leaf_Placed (H : Heap; I : Index)
      with Ghost,
@@ -251,13 +268,20 @@ package body Heaps.Min_Max with SPARK_Mode is
                   and then H.Last = H.Last'Old
                   and then Model (H) = Model (H)'Old;
 
-   procedure Sift_Down (H : in out Heap; Start : Index; Min_Side : Boolean)
+   procedure Sift_Down
+     (H : in out Heap; Start : Index; Min_Side : Boolean;
+      N : Claim_Bound := 1)
      with Pre  => Start <= H.Last
+                  and then N <= Start
                   and then Min_Side = Min_Level (Start)
-                  and then Heap_Except_Below (H, Start),
-          Post => Is_Heap (H)
+                  and then Heap_Except_Below (H, Start, N),
+          Post => Heap_Except_Below (H, 0, N)
                   and then H.Last = H.Last'Old
                   and then Model (H) = Model (H)'Old;
+   --  N is the lowest index whose subtree is already in order; everything
+   --  below it is left alone. The extractions sift with N = 1, where the
+   --  whole array is in order but for the key being carried down; a bottom-up
+   --  build sifts at N = Start, where nothing above Start is in order yet.
 
    ------------------
    -- Is_Min_Level --
@@ -421,7 +445,9 @@ package body Heaps.Min_Max with SPARK_Mode is
    -- Sift_Down --
    ---------------
 
-   procedure Sift_Down (H : in out Heap; Start : Index; Min_Side : Boolean) is
+   procedure Sift_Down
+     (H : in out Heap; Start : Index; Min_Side : Boolean;
+      N : Claim_Bound := 1) is
       I    : Index   := Start;
       Side : Boolean := Min_Side;
       M    : Index;
@@ -430,7 +456,8 @@ package body Heaps.Min_Max with SPARK_Mode is
          pragma Loop_Invariant (I <= H.Last);
          pragma Loop_Invariant (H.Last = H.Last'Loop_Entry);
          pragma Loop_Invariant (Side = Min_Level (I));
-         pragma Loop_Invariant (Heap_Except_Below (H, I));
+         pragma Loop_Invariant (N <= I);
+         pragma Loop_Invariant (Heap_Except_Below (H, I, N));
          pragma Loop_Invariant (Model (H) = Model (H)'Loop_Entry);
          pragma Loop_Variant (Increases => I);
 
@@ -453,10 +480,10 @@ package body Heaps.Min_Max with SPARK_Mode is
                      Swap (H, P, M);
                   end if;
                   Lemma_Parent_Level (M);
-                  Lemma_Step_Down_Far (Before, H, I, M);
+                  Lemma_Step_Down_Far (Before, H, I, M, N);
                end;
             else
-               Lemma_Step_Down_Near (Before, H, I, M);
+               Lemma_Step_Down_Near (Before, H, I, M, N);
                Lemma_Parent_Level (M);
                Side := not Side;
             end if;
@@ -465,7 +492,7 @@ package body Heaps.Min_Max with SPARK_Mode is
          end;
       end loop;
 
-      Lemma_Settled_Below (H, I);
+      Lemma_Settled_Below (H, I, N);
    end Sift_Down;
 
    -----------
@@ -583,6 +610,72 @@ package body Heaps.Min_Max with SPARK_Mode is
          Lemma_Settled_Above (H, I);
       end if;
    end Insert;
+
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Before : constant Key_Array := Into.Keys with Ghost;
+      Base   : constant Extended_Index := Into.Last;
+      Cap    : constant Extended_Index := Into.Capacity;
+
+      Joined : KM.Multiset with Ghost;
+      --  The model of the concatenation, which the rebuild has to preserve
+
+      Prev : Key_Array (1 .. Cap) with Ghost;
+      --  See the comment on the homonym in Heaps.Unsorted.Meld
+   begin
+      --  Append the keys of From. This is the same argument as the unsorted
+      --  array's meld: the prefix does not move and each copied key joins the
+      --  sum in turn.
+
+      for I in 1 .. From.Last loop
+         Prev := Into.Keys;
+
+         Into.Keys (Base + I) := From.Keys (I);
+         Into.Last := Base + I;
+
+         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + I - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev, Base + I - 1),
+            Models.Occurrences (Into.Keys, Base + I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Before, Base),
+            Models.Occurrences (From.Keys, I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (for all J in 1 .. Base => Into.Keys (J) = Before (J));
+         pragma Loop_Invariant
+           (Model (Into)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+      end if;
+
+      Joined := Model (Into);
+
+      --  Rebuild bottom-up. The claim bound starts one past the last index,
+      --  where no node yet answers for its subtree, and travels down to the
+      --  root; each sift is given exactly the claims already established.
+
+      for I in reverse 1 .. Into.Last loop
+         Sift_Down (Into, I, Is_Min_Level (I), I);
+
+         pragma Loop_Invariant (Heap_Except_Below (Into, 0, I));
+         pragma Loop_Invariant (Into.Last = Base + From.Last);
+         pragma Loop_Invariant (Model (Into) = Joined);
+      end loop;
+
+      From.Last := 0;
+   end Meld;
 
    -----------------
    -- Extract_Min --
@@ -708,12 +801,13 @@ package body Heaps.Min_Max with SPARK_Mode is
       end loop;
    end Lemma_Step_Up;
 
-   procedure Lemma_Step_Down_Near (Before, After : Heap; I, M : Index) is
+   procedure Lemma_Step_Down_Near
+     (Before, After : Heap; I, M : Index; N : Claim_Bound) is
       pragma Unreferenced (Before);
    begin
       Lemma_Parent_Level (M);
 
-      for A in 1 .. After.Last loop
+      for A in N .. After.Last loop
          for D in 1 .. After.Last loop
 
             if Is_Ancestor (A, D) and then A /= M then
@@ -749,7 +843,7 @@ package body Heaps.Min_Max with SPARK_Mode is
          end loop;
 
          pragma Loop_Invariant
-           (for all B in 1 .. A =>
+           (for all B in N .. A =>
               (for all E in 1 .. After.Last =>
                  (if Is_Ancestor (B, E) and then B /= M
                   then Ordered (Min_Level (B), After.Keys (B),
@@ -757,7 +851,8 @@ package body Heaps.Min_Max with SPARK_Mode is
       end loop;
    end Lemma_Step_Down_Near;
 
-   procedure Lemma_Step_Down_Far (Before, After : Heap; I, M : Index) is
+   procedure Lemma_Step_Down_Far
+     (Before, After : Heap; I, M : Index; N : Claim_Bound) is
       pragma Unreferenced (Before);
       P : constant Index := Parent (M);
    begin
@@ -766,7 +861,7 @@ package body Heaps.Min_Max with SPARK_Mode is
       pragma Assert (Is_Ancestor (I, P));
       pragma Assert (Is_Near (I, P));
 
-      for A in 1 .. After.Last loop
+      for A in N .. After.Last loop
          for D in 1 .. After.Last loop
 
             if Is_Ancestor (A, D) and then A /= M then
@@ -829,7 +924,7 @@ package body Heaps.Min_Max with SPARK_Mode is
          end loop;
 
          pragma Loop_Invariant
-           (for all B in 1 .. A =>
+           (for all B in N .. A =>
               (for all E in 1 .. After.Last =>
                  (if Is_Ancestor (B, E) and then B /= M
                   then Ordered (Min_Level (B), After.Keys (B),
@@ -854,7 +949,12 @@ package body Heaps.Min_Max with SPARK_Mode is
       end loop;
    end Lemma_Settled_Above;
 
-   procedure Lemma_Settled_Below (H : Heap; I : Index) is
+   procedure Lemma_Settled_Below
+     (H : Heap; I : Index; N : Claim_Bound)
+   is
+      pragma Unreferenced (N);
+      --  The bound only narrows the conclusion; the walk down from I is the
+      --  same one whatever it is.
    begin
       for D in 1 .. H.Last loop
          if D /= I and then Is_Ancestor (I, D)

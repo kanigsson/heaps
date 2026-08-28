@@ -179,6 +179,31 @@ package Heaps.Weak with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Is_Heap (Into)
+                  and then Is_Heap (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Heap (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --
+   --  An implicit heap cannot splice two trees together, so this appends the
+   --  keys of From and rebuilds the whole array. The rebuild is the weak
+   --  heap's own bottom-up construction: walk the indices downwards and join
+   --  each node to its distinguished ancestor, which is one comparison and at
+   --  most one exchange per node. That is n + m comparisons; on top of them
+   --  sits the climb that finds each distinguished ancestor, which is short
+   --  on average -- the left-child chains it walks are disjoint paths -- and
+   --  logarithmic only in the worst case. That is the same bargain the binary
+   --  heap strikes, and it is the honest comparison to draw: rebuilding by
+   --  repeated insertion would be O(m log n) and would flatter the mergeable
+   --  structures.
+   --
+   --  Is_Heap (From) is required only for uniformity with the rest of the
+   --  family. The rebuild does not depend on it.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)

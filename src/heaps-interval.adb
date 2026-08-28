@@ -33,10 +33,28 @@ package body Heaps.Interval with SPARK_Mode is
    --  in: the claims that node makes about its subtree (sift-down), or the
    --  claims its ancestors make about it (sift-up).
 
-   function Nested_Except_Below
-     (H : Heap; Min_Side : Boolean; I : Index) return Boolean
+   subtype Claim_Bound is Positive range 1 .. Max_Capacity;
+   --  A lower bound on the nodes whose claims are in force. It reaches one
+   --  past the last node so that a build can start from "no claim at all".
+
+   function Nested_From
+     (H : Heap; Min_Side : Boolean; N : Claim_Bound) return Boolean
    is
-     (for all A in 1 .. Node_Count (H) =>
+     (for all A in N .. Node_Count (H) =>
+        (for all D in 1 .. Node_Count (H) =>
+           (if Is_Ancestor (A, D)
+            then Ordered (Min_Side,
+                          H.Keys (Slot (H.Last, Min_Side, A)),
+                          H.Keys (Slot (H.Last, Min_Side, D))))))
+     with Ghost;
+   --  Nesting restricted to the nodes from N on. A sift works with N = 1,
+   --  where every node claims its subtree; a bottom-up build works its way
+   --  down from N = Node_Count + 1, where none of them does yet.
+
+   function Nested_Except_Below
+     (H : Heap; Min_Side : Boolean; I : Index; N : Claim_Bound) return Boolean
+   is
+     (for all A in N .. Node_Count (H) =>
         (for all D in 1 .. Node_Count (H) =>
            (if Is_Ancestor (A, D) and then A /= I
             then Ordered (Min_Side,
@@ -56,12 +74,16 @@ package body Heaps.Interval with SPARK_Mode is
      with Ghost;
 
    function Heap_Except_Below
-     (H : Heap; Min_Side : Boolean; I : Index) return Boolean
+     (H : Heap; Min_Side : Boolean; I : Index;
+      N : Claim_Bound; NO : Claim_Bound) return Boolean
    is
      (Is_Paired (H)
-      and then Nested_Except_Below (H, Min_Side, I)
-      and then Nested_On (H, not Min_Side))
+      and then Nested_Except_Below (H, Min_Side, I, N)
+      and then Nested_From (H, not Min_Side, NO))
      with Ghost;
+   --  The two sides carry bounds of their own. A build sifts the first end of
+   --  a node while the other end of that same node is still unplaced, so the
+   --  side that is not being sifted is one node short of the side that is.
 
    function Heap_Except_Above
      (H : Heap; Min_Side : Boolean; I : Index) return Boolean
@@ -153,12 +175,20 @@ package body Heaps.Interval with SPARK_Mode is
    --  that a lone key -- whose two ends share a slot -- never has to be
    --  considered here.
 
-   procedure Sift_Down (H : in out Heap; Start : Index; Min_Side : Boolean)
+   procedure Sift_Down
+     (H : in out Heap; Start : Index; Min_Side : Boolean;
+      N : Claim_Bound := 1; NO : Claim_Bound := 1)
      with Pre  => Start <= Node_Count (H)
-                  and then Heap_Except_Below (H, Min_Side, Start),
-          Post => Is_Heap (H)
+                  and then N <= Start
+                  and then Heap_Except_Below (H, Min_Side, Start, N, NO),
+          Post => Is_Paired (H)
+                  and then Nested_From (H, Min_Side, N)
+                  and then Nested_From (H, not Min_Side, NO)
                   and then H.Last = H.Last'Old
                   and then Model (H) = Model (H)'Old;
+   --  N is the lowest node whose claims on the sifted side are in force, and
+   --  NO the same for the other side. The extractions sift with both at 1,
+   --  where the whole array is in order but for the key being carried down.
 
    ---------------------
    -- Steps of a sift --
@@ -200,14 +230,16 @@ package body Heaps.Interval with SPARK_Mode is
                   and then Fits_Above (After, Min_Side, Parent (I));
 
    procedure Lemma_Step_Down
-     (Before, After : Heap; Min_Side : Boolean; I, C : Index)
+     (Before, After : Heap; Min_Side : Boolean; I, C : Index;
+      N : Claim_Bound; NO : Claim_Bound)
      with Ghost,
           Pre  => 2 * I <= Node_Count (Before)
                   and then C in 2 * I .. 2 * I + 1
                   and then C <= Node_Count (Before)
+                  and then N <= I
                   and then After.Last = Before.Last
                   and then After.Capacity = Before.Capacity
-                  and then Heap_Except_Below (Before, Min_Side, I)
+                  and then Heap_Except_Below (Before, Min_Side, I, N, NO)
                   and then
                     (for all J in 1 .. Node_Count (Before) =>
                        (if Parent (J) = I
@@ -231,12 +263,17 @@ package body Heaps.Interval with SPARK_Mode is
                              (Min_Side,
                               Before.Keys (Slot (Before.Last, Min_Side, C)),
                               After.Keys (Slot (Before.Last, Min_Side, C)))
-                  and then Ordered
-                             (not Min_Side,
-                              Before.Keys
-                                (Slot (Before.Last, not Min_Side, I)),
-                              After.Keys
-                                (Slot (Before.Last, not Min_Side, C)))
+                  and then (After.Keys
+                              (Slot (Before.Last, not Min_Side, C))
+                            = Before.Keys
+                                (Slot (Before.Last, not Min_Side, C))
+                            or else Ordered
+                                      (not Min_Side,
+                                       Before.Keys
+                                         (Slot (Before.Last, not Min_Side, I)),
+                                       After.Keys
+                                         (Slot
+                                            (Before.Last, not Min_Side, C))))
                   and then Ordered
                              (not Min_Side,
                               After.Keys
@@ -249,7 +286,7 @@ package body Heaps.Interval with SPARK_Mode is
                           and M /= Slot (Before.Last, True, C)
                           and M /= Slot (Before.Last, False, C)
                         then After.Keys (M) = Before.Keys (M))),
-          Post => Heap_Except_Below (After, Min_Side, C);
+          Post => Heap_Except_Below (After, Min_Side, C, N, NO);
    --  Exchanging one end of a node with the corresponding end of its best
    --  child. The key that comes down may fall outside the child's interval,
    --  in which case it takes the other end of that node and the end it
@@ -278,12 +315,16 @@ package body Heaps.Interval with SPARK_Mode is
           Post => Is_Heap (H);
 
    procedure Lemma_Settled_Below
-     (H : Heap; Min_Side : Boolean; I : Index)
+     (H : Heap; Min_Side : Boolean; I : Index;
+      N : Claim_Bound; NO : Claim_Bound)
      with Ghost,
           Pre  => I <= Node_Count (H)
-                  and then Heap_Except_Below (H, Min_Side, I)
+                  and then N <= I
+                  and then Heap_Except_Below (H, Min_Side, I, N, NO)
                   and then Children_Bounded (H, Min_Side, I),
-          Post => Is_Heap (H);
+          Post => Is_Paired (H)
+                  and then Nested_From (H, Min_Side, N)
+                  and then Nested_From (H, not Min_Side, NO);
 
    procedure Lemma_Pair_Completed
      (Before, After : Heap; Min_Side : Boolean; N : Index)
@@ -413,7 +454,7 @@ package body Heaps.Interval with SPARK_Mode is
                   and then (for all M in 1 .. Before.Last =>
                               (if M /= Slot (Before.Last, Min_Side, 1)
                                then After.Keys (M) = Before.Keys (M))),
-          Post => Heap_Except_Below (After, Min_Side, 1);
+          Post => Heap_Except_Below (After, Min_Side, 1, 1, 1);
    --  Overwriting one end of the root with a key that still fits under the
    --  other end. Everything below the root is untouched, so the root is the
    --  only node whose claims about its subtree are in doubt.
@@ -430,7 +471,7 @@ package body Heaps.Interval with SPARK_Mode is
                   and then (for all M in 1 .. After.Last =>
                               (if M /= Slot (Before.Last, Min_Side, 1)
                                then After.Keys (M) = Before.Keys (M))),
-          Post => Heap_Except_Below (After, Min_Side, 1);
+          Post => Heap_Except_Below (After, Min_Side, 1, 1, 1);
    --  What both removals do to the array: the deepest key is dropped and put
    --  back at the end of the root that has just been vacated. It lands inside
    --  the interval of the root, because it was inside it before.
@@ -628,14 +669,17 @@ package body Heaps.Interval with SPARK_Mode is
    -- Sift_Down --
    ---------------
 
-   procedure Sift_Down (H : in out Heap; Start : Index; Min_Side : Boolean) is
+   procedure Sift_Down
+     (H : in out Heap; Start : Index; Min_Side : Boolean;
+      N : Claim_Bound := 1; NO : Claim_Bound := 1) is
       I : Index := Start;
       C : Index;
    begin
       loop
          pragma Loop_Invariant (I <= Node_Count (H));
          pragma Loop_Invariant (H.Last = H.Last'Loop_Entry);
-         pragma Loop_Invariant (Heap_Except_Below (H, Min_Side, I));
+         pragma Loop_Invariant (N <= I);
+         pragma Loop_Invariant (Heap_Except_Below (H, Min_Side, I, N, NO));
          pragma Loop_Invariant (Model (H) = Model (H)'Loop_Entry);
          pragma Loop_Variant (Increases => I);
 
@@ -706,18 +750,117 @@ package body Heaps.Interval with SPARK_Mode is
               (Ordered (not Min_Side,
                         Before.Keys (Slot (H.Last, not Min_Side, I)),
                         Before.Keys (Slot (H.Last, Min_Side, I))));
-            pragma Assert
-              (Ordered (not Min_Side,
-                        Before.Keys (Slot (H.Last, not Min_Side, I)),
-                        Before.Keys (Slot (H.Last, not Min_Side, C))));
+            --  Either the far end of the child did not move at all, or it
+            --  took the key that came down, which node I already bounded.
 
-            Lemma_Step_Down (Before, H, Min_Side, I, C);
+            pragma Assert
+              (H.Keys (Slot (H.Last, not Min_Side, C))
+               = Before.Keys (Slot (H.Last, not Min_Side, C))
+               or else Ordered
+                         (not Min_Side,
+                          Before.Keys (Slot (H.Last, not Min_Side, I)),
+                          H.Keys (Slot (H.Last, not Min_Side, C))));
+
+            Lemma_Step_Down (Before, H, Min_Side, I, C, N, NO);
             I := C;
          end;
       end loop;
 
-      Lemma_Settled_Below (H, Min_Side, I);
+      Lemma_Settled_Below (H, Min_Side, I, N, NO);
    end Sift_Down;
+
+   ----------
+   -- Meld --
+   ----------
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Before : constant Key_Array := Into.Keys with Ghost;
+      Base   : constant Extended_Index := Into.Last;
+      Cap    : constant Extended_Index := Into.Capacity;
+
+      Joined : KM.Multiset with Ghost;
+      --  The model of the concatenation, which the rebuild has to preserve
+
+      Prev : Key_Array (1 .. Cap) with Ghost;
+      --  See the comment on the homonym in Heaps.Unsorted.Meld
+   begin
+      --  Append the keys of From. This is the same argument as the unsorted
+      --  array's meld: the prefix does not move and each copied key joins the
+      --  sum in turn.
+
+      for I in 1 .. From.Last loop
+         Prev := Into.Keys;
+
+         Into.Keys (Base + I) := From.Keys (I);
+         Into.Last := Base + I;
+
+         Models.Lemma_Same_Prefix (Prev, Into.Keys, Base + I - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev, Base + I - 1),
+            Models.Occurrences (Into.Keys, Base + I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Before, Base),
+            Models.Occurrences (From.Keys, I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (for all J in 1 .. Base => Into.Keys (J) = Before (J));
+         pragma Loop_Invariant
+           (Model (Into)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+      end if;
+
+      Joined := Model (Into);
+
+      --  First pass: turn every pair of slots into a well-formed interval.
+      --  The appended keys landed in whatever order From held them, and both
+      --  sifts want Is_Paired from the start. A node holding a lone key has
+      --  its two ends in one slot and needs nothing.
+
+      for M in 1 .. Node_Count (Into) loop
+         if 2 * M <= Into.Last
+           and then Into.Keys (2 * M - 1) > Into.Keys (2 * M)
+         then
+            Swap (Into, 2 * M - 1, 2 * M);
+         end if;
+
+         pragma Loop_Invariant (Into.Last = Base + From.Last);
+         pragma Loop_Invariant (Model (Into) = Joined);
+         pragma Loop_Invariant
+           (for all B in 1 .. M =>
+              Into.Keys (Slot (Into.Last, True, B))
+              <= Into.Keys (Slot (Into.Last, False, B)));
+      end loop;
+
+      pragma Assert (Is_Paired (Into));
+
+      --  Second pass: place the two ends of each node, bottom-up. Sifting the
+      --  low end of a node happens while its high end is still unplaced, so
+      --  that sift is given a claim bound one node higher on the side it is
+      --  not touching; the high end is then sifted against a low side that is
+      --  already in order.
+
+      for M in reverse 1 .. Node_Count (Into) loop
+         Sift_Down (Into, M, True, M, M + 1);
+         Sift_Down (Into, M, False, M, M);
+
+         pragma Loop_Invariant (Into.Last = Base + From.Last);
+         pragma Loop_Invariant (Model (Into) = Joined);
+         pragma Loop_Invariant (Is_Paired (Into));
+         pragma Loop_Invariant (Nested_From (Into, True, M));
+         pragma Loop_Invariant (Nested_From (Into, False, M));
+      end loop;
+
+      From.Last := 0;
+   end Meld;
 
    ------------
    -- Insert --
@@ -949,7 +1092,8 @@ package body Heaps.Interval with SPARK_Mode is
    end Lemma_Step_Up;
 
    procedure Lemma_Step_Down
-     (Before, After : Heap; Min_Side : Boolean; I, C : Index)
+     (Before, After : Heap; Min_Side : Boolean; I, C : Index;
+      N : Claim_Bound; NO : Claim_Bound)
    is
       S : constant Boolean        := Min_Side;
       L : constant Extended_Index := Before.Last;
@@ -992,15 +1136,12 @@ package body Heaps.Interval with SPARK_Mode is
 
       pragma Assert (Is_Paired (After));
 
-      --  The key that came down cannot have gone past the end of node I that
-      --  stayed behind, so wherever it ended up in node C it is still inside
-      --  the interval of every node above.
+      --  The far end of node C either did not move, in which case the nodes
+      --  above it bound it as they did before, or it took the key that came
+      --  down -- and that key was inside the interval of node I, hence inside
+      --  the interval of everything above I as well.
 
-      pragma Assert
-        (Ordered (not S, After.Keys (Slot (L, not S, I)),
-                         After.Keys (Slot (L, not S, C))));
-
-      for A in 1 .. Node_Count (After) loop
+      for A in NO .. Node_Count (After) loop
          for D in 1 .. Node_Count (After) loop
 
             if Is_Ancestor (A, D) then
@@ -1008,7 +1149,12 @@ package body Heaps.Interval with SPARK_Mode is
                   pragma Assert
                     (Ordered (not S, After.Keys (Slot (L, not S, A)),
                                      After.Keys (Slot (L, not S, D))));
-               elsif D = C or else D = I then
+               elsif D = C then
+                  pragma Assert (A = I or else Is_Ancestor (A, I));
+                  pragma Assert
+                    (Ordered (not S, After.Keys (Slot (L, not S, A)),
+                                     After.Keys (Slot (L, not S, D))));
+               elsif D = I then
                   pragma Assert (A = I or else Is_Ancestor (A, I));
                   pragma Assert
                     (Ordered (not S, After.Keys (Slot (L, not S, A)),
@@ -1024,16 +1170,16 @@ package body Heaps.Interval with SPARK_Mode is
          end loop;
 
          pragma Loop_Invariant
-           (for all B in 1 .. A =>
+           (for all B in NO .. A =>
               (for all E in 1 .. Node_Count (After) =>
                  (if Is_Ancestor (B, E)
                   then Ordered (not S, After.Keys (Slot (L, not S, B)),
                                        After.Keys (Slot (L, not S, E))))));
       end loop;
 
-      pragma Assert (Nested_On (After, not S));
+      pragma Assert (Nested_From (After, not S, NO));
 
-      for A in 1 .. Node_Count (After) loop
+      for A in N .. Node_Count (After) loop
          for D in 1 .. Node_Count (After) loop
 
             if Is_Ancestor (A, D) and then A /= C then
@@ -1074,7 +1220,7 @@ package body Heaps.Interval with SPARK_Mode is
          end loop;
 
          pragma Loop_Invariant
-           (for all B in 1 .. A =>
+           (for all B in N .. A =>
               (for all E in 1 .. Node_Count (After) =>
                  (if Is_Ancestor (B, E) and then B /= C
                   then Ordered (S, After.Keys (Slot (L, S, B)),
@@ -1106,7 +1252,13 @@ package body Heaps.Interval with SPARK_Mode is
    -- Lemma_Settled_Below  --
    --------------------------
 
-   procedure Lemma_Settled_Below (H : Heap; Min_Side : Boolean; I : Index) is
+   procedure Lemma_Settled_Below
+     (H : Heap; Min_Side : Boolean; I : Index;
+      N : Claim_Bound; NO : Claim_Bound)
+   is
+      pragma Unreferenced (N, NO);
+      --  The bounds only narrow the conclusion; the walk down from I is the
+      --  same one whatever they are.
    begin
       for D in 1 .. Node_Count (H) loop
          if D /= I and then Is_Ancestor (I, D) then

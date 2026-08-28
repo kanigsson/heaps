@@ -45,6 +45,23 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
      Pre                => A'First = 1 and then Lst <= A'Last;
    --  The multiset of the keys held in A (1 .. Lst)
 
+   function Occurrences_In
+     (A : Key_Array; Fst : Positive; Lst : Extended_Index) return Model
+   is
+     (if Lst < Fst then KM.Empty_Multiset
+      else KM.Add (Occurrences_In (A, Fst, Lst - 1), A (Lst)))
+   with
+     Subprogram_Variant => (Decreases => Lst),
+     Pre                => A'First = 1 and then Lst <= A'Last;
+   --  The multiset of the keys held in A (Fst .. Lst).
+   --
+   --  Occurrences models a prefix, which is all a heap whose keys occupy
+   --  1 .. Last ever needs. A merge of two sorted runs is the one operation
+   --  in the collection that leaves a hole in the middle of the array -- the
+   --  part of the original run already consumed and not yet overwritten --
+   --  and describing the two live regions on either side of it is what this
+   --  is for.
+
    ---------------------------------
    -- Elementary multiset lemmas  --
    ---------------------------------
@@ -87,6 +104,18 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
    --  The law that carries a node's own key out through the sum of its two
    --  subtrees, and so the one every step of a recursive merge needs.
 
+   procedure Lemma_Sum_Add_Left (X, Y : Model; E : Key_Type)
+     with Post => KM.Sum (KM.Add (X, E), Y) = KM.Add (KM.Sum (X, Y), E);
+   --  The same law on the other operand. A merge of two runs moves one key
+   --  at a time out of a sum of what is left of each of them, and which of
+   --  the two it comes from decides which of these two it needs.
+
+   procedure Lemma_Sum_Empty_Left (X : Model)
+     with Post => KM.Sum (KM.Empty_Multiset, X) = X;
+
+   procedure Lemma_Sum_Symmetric (X, Y : Model)
+     with Post => KM.Sum (X, Y) = KM.Sum (Y, X);
+
    -----------------------
    -- Array-level lemmas --
    -----------------------
@@ -116,6 +145,45 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
    --  The statement is deliberately symmetric — adding the discarded key on
    --  one side and the new key on the other — so that it needs no
    --  precondition about the discarded key still being present.
+
+   procedure Lemma_Range_Is_Prefix (A : Key_Array; Lst : Extended_Index)
+     with Pre  => A'First = 1 and then Lst <= A'Last,
+          Post => Occurrences_In (A, 1, Lst) = Occurrences (A, Lst),
+          Subprogram_Variant => (Decreases => Lst);
+   --  A range that starts at the first slot is a prefix
+
+   procedure Lemma_Range_Same
+     (A, B : Key_Array; Fst : Positive; Lst : Extended_Index)
+     with Pre  => A'First = 1
+                  and then B'First = 1
+                  and then Lst <= A'Last
+                  and then Lst <= B'Last
+                  and then (for all J in Fst .. Lst => A (J) = B (J)),
+          Post => Occurrences_In (A, Fst, Lst) = Occurrences_In (B, Fst, Lst),
+          Subprogram_Variant => (Decreases => Lst);
+   --  Two arrays that agree over a range have the same model of it
+
+   procedure Lemma_Range_Peel
+     (A : Key_Array; Fst : Positive; Lst : Extended_Index)
+     with Pre  => A'First = 1 and then Fst <= Lst and then Lst <= A'Last,
+          Post => Occurrences_In (A, Fst, Lst)
+                  = KM.Add (Occurrences_In (A, Fst + 1, Lst), A (Fst)),
+          Subprogram_Variant => (Decreases => Lst);
+   --  A range can be taken apart at its low end as well as at its high one.
+   --  A merge writes its output from the high end downwards, so the region it
+   --  has already filled grows one slot at a time at its *low* end, and this
+   --  is the law that step needs.
+
+   procedure Lemma_Range_Split
+     (A : Key_Array; Mid : Extended_Index; Lst : Extended_Index)
+     with Pre  => A'First = 1 and then Mid <= Lst and then Lst <= A'Last,
+          Post => Occurrences (A, Lst)
+                  = KM.Sum (Occurrences (A, Mid),
+                            Occurrences_In (A, Mid + 1, Lst)),
+          Subprogram_Variant => (Decreases => Lst);
+   --  A prefix splits into a shorter prefix and the range above it. This is
+   --  what turns the two live regions a merge leaves in the array back into
+   --  the plain prefix model the rest of the collection speaks.
 
    procedure Lemma_Swap
      (A, R : Key_Array; I, J : Index; Lst : Extended_Index)

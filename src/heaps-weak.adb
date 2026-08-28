@@ -340,6 +340,141 @@ package body Heaps.Weak with SPARK_Mode is
       end loop;
    end Insert;
 
+   ----------
+   -- Meld --
+   ----------
+
+   function Built_Above (H : Heap; J : Extended_Index) return Boolean is
+     (for all M in 2 .. H.Last =>
+        (if M >= J then H.Keys (Da (H, M)) <= H.Keys (M)))
+     with Ghost;
+   --  Every node from J on already answers to its distinguished ancestor.
+   --  This is what the bottom-up build walks down: Built_Above (H, 2) is
+   --  exactly Is_Heap (H), and Built_Above (H, H.Last + 1) is vacuous.
+
+   procedure Meld (Into : in out Heap; From : in out Heap) is
+      Before : constant Key_Array := Into.Keys with Ghost;
+      Base   : constant Extended_Index := Into.Last;
+      Cap    : constant Extended_Index := Into.Capacity;
+
+      Joined : KM.Multiset with Ghost;
+      --  The model of the concatenation, which the rebuild has to preserve
+
+      Prev_K : Key_Array (1 .. Cap) with Ghost;
+      --  See the comment on the homonym in Heaps.Unsorted.Meld
+
+      Prev : Heap (Cap) with Ghost;
+      --  See the comment on the homonym in Insert
+
+      A     : Index;
+      Above : Key_Type;
+   begin
+      --  Append the keys of From. This is the same argument as the unsorted
+      --  array's meld: the prefix does not move and each copied key joins the
+      --  sum in turn. The flip bit of a slot that becomes a node is cleared,
+      --  so that a melded heap does not depend on what the slot last held.
+
+      for I in 1 .. From.Last loop
+         Prev_K := Into.Keys;
+
+         Into.Keys (Base + I) := From.Keys (I);
+         Into.Flip (Base + I) := False;
+         Into.Last := Base + I;
+
+         Models.Lemma_Same_Prefix (Prev_K, Into.Keys, Base + I - 1);
+         Models.Lemma_Add_Congruent
+           (Models.Occurrences (Prev_K, Base + I - 1),
+            Models.Occurrences (Into.Keys, Base + I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Add
+           (Models.Occurrences (Before, Base),
+            Models.Occurrences (From.Keys, I - 1),
+            From.Keys (I));
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+
+         pragma Assert
+           (Models.Occurrences (Into.Keys, Base + I - 1)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I - 1));
+         pragma Assert
+           (Model (Into)
+            = KM.Add (Models.Occurrences (Into.Keys, Base + I - 1),
+                      From.Keys (I)));
+
+         pragma Loop_Invariant (Into.Last = Base + I);
+         pragma Loop_Invariant
+           (for all J in 1 .. Base => Into.Keys (J) = Before (J));
+         pragma Loop_Invariant
+           (Model (Into)
+            = Models.Occurrences (Before, Base)
+              + Models.Occurrences (From.Keys, I));
+      end loop;
+
+      if From.Last = 0 then
+         Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
+      end if;
+
+      Joined := Model (Into);
+
+      --  Rebuild. Walking the indices downwards and joining each node to its
+      --  distinguished ancestor is the weak heap's construction: a join
+      --  settles the ordering at the node for good, and it can only lower the
+      --  key of an ancestor, which is still to be dealt with.
+
+      for J in reverse 2 .. Into.Last loop
+         A := Ancestor (Into, J);
+
+         if Into.Keys (J) < Into.Keys (A) then
+
+            --  The same exchange as in an insertion: the two keys and the two
+            --  subtrees of J change places, so that every node keeps the key
+            --  it was answerable to.
+
+            Prev := Into;
+
+            Above := Into.Keys (A);
+            Into.Keys (A) := Into.Keys (J);
+            Into.Keys (J) := Above;
+            Into.Flip (J) := not Into.Flip (J);
+
+            Lemma_Join (Prev, Into, A, J);
+            Lemma_Da_Is_Ancestor (Prev);
+            Models.Lemma_Swap (Prev.Keys, Into.Keys, A, J, Into.Last);
+
+            --  A node that answered to J now answers to A and the other way
+            --  round; every other node keeps the ancestor it had.
+
+            pragma Assert (Da (Into, J) = A);
+            pragma Assert
+              (for all M in 2 .. Into.Last =>
+                 (if Da (Prev, M) = J then Da (Into, M) = A));
+            pragma Assert
+              (for all M in 2 .. Into.Last =>
+                 (if M > J and then Da (Prev, M) = A
+                     and then Da (Into, M) /= A
+                  then Da (Into, M) = J));
+            pragma Assert
+              (for all M in 2 .. Into.Last =>
+                 (if M > J and then Da (Prev, M) /= A
+                     and then Da (Prev, M) /= J
+                  then Da (Into, M) = Da (Prev, M)));
+
+            --  Whichever of the two nodes a node now answers to, the key it
+            --  finds there is one it was already above.
+
+            pragma Assert
+              (for all M in 2 .. Into.Last =>
+                 (if M >= J then Into.Keys (Da (Into, M)) <= Into.Keys (M)));
+         end if;
+
+         pragma Loop_Invariant (Into.Last = Base + From.Last);
+         pragma Loop_Invariant (Built_Above (Into, J));
+         pragma Loop_Invariant (Model (Into) = Joined);
+      end loop;
+
+      From.Last := 0;
+   end Meld;
+
    -----------------
    -- Extract_Min --
    -----------------

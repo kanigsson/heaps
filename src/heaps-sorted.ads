@@ -83,6 +83,23 @@ package Heaps.Sorted with SPARK_Mode is
                   and Size (H) = Size (H)'Old + 1
                   and Model (H) = Key_Multisets.Add (Model (H)'Old, K);
 
+   procedure Meld (Into : in out Heap; From : in out Heap)
+     with Pre  => Is_Sorted (Into)
+                  and then Is_Sorted (From)
+                  and then Size (From) <= Into.Capacity - Size (Into),
+          Post => Is_Sorted (Into)
+                  and Size (Into) = Size (Into)'Old + Size (From)'Old
+                  and Is_Empty (From)
+                  and Model (Into) = Model (Into)'Old + Model (From)'Old;
+   --  Destructive meld: Into receives every key of From, which is left empty.
+   --
+   --  This is the one entry whose meld is neither an append and a rebuild nor
+   --  a splice, but the merge of two sorted runs, in O(n + m). It runs
+   --  backwards -- taking the smaller of the two remaining minima and writing
+   --  it at the far end of the array, working towards the front -- because
+   --  the output slot then always sits above the part of Into's own run that
+   --  is still to be read, and no key has to be copied out of the way.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Sorted (H),
           Post => Is_Sorted (H)
