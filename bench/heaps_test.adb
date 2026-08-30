@@ -17,6 +17,7 @@ with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
+with Heaps.Pairing_Pool;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
 with Heaps.Unsorted;
@@ -452,6 +453,7 @@ procedure Heaps_Test is
 
    package Arena renames Heaps.Leftist_Pool;
    package Skew_Arena renames Heaps.Skew_Pool;
+   package Pair_Arena renames Heaps.Pairing_Pool;
 
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
@@ -485,6 +487,8 @@ procedure Heaps_Test is
       L_From : Arena.Tree := 0;
       Q_Into : Skew_Arena.Tree := 0;
       Q_From : Skew_Arena.Tree := 0;
+      G_Into : Pair_Arena.Tree := 0;
+      G_From : Pair_Arena.Tree := 0;
 
       Oracle : array (1 .. Total) of Key_Type;
       Filled : Natural := 0;
@@ -502,6 +506,7 @@ procedure Heaps_Test is
       S_Key : Key_Type;
       L_Key : Key_Type;
       Q_Key : Key_Type;
+      G_Key : Key_Type;
       Prev  : Key_Type := Key_Type'First;
 
       procedure Feed (Count : Natural; Into_Target : Boolean);
@@ -526,6 +531,7 @@ procedure Heaps_Test is
                Heaps.Sorted.Insert (S_Into, K);
                Arena.Insert (L_Into, K);
                Skew_Arena.Insert (Q_Into, K);
+               Pair_Arena.Insert (G_Into, K);
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
@@ -538,6 +544,7 @@ procedure Heaps_Test is
                Heaps.Sorted.Insert (S_From, K);
                Arena.Insert (L_From, K);
                Skew_Arena.Insert (Q_From, K);
+               Pair_Arena.Insert (G_From, K);
             end if;
          end loop;
       end Feed;
@@ -547,6 +554,7 @@ procedure Heaps_Test is
 
       Arena.Clear;
       Skew_Arena.Clear;
+      Pair_Arena.Clear;
 
       Feed (N, True);
       Feed (M, False);
@@ -562,6 +570,7 @@ procedure Heaps_Test is
       Heaps.Sorted.Meld (S_Into, S_From);
       Arena.Meld (L_Into, L_From);
       Skew_Arena.Meld (Q_Into, Q_From);
+      Pair_Arena.Meld (G_Into, G_From);
 
       Check (Heaps.Unsorted.Size (A_Into) = Total,
              "meld: unsorted size is the sum");
@@ -600,6 +609,10 @@ procedure Heaps_Test is
              "meld: skew size is the sum");
       Check (Skew_Arena.Is_Empty (Q_From),
              "meld: skew source is emptied");
+      Check (Pair_Arena.Size_Of (G_Into) = Total,
+             "meld: pairing size is the sum");
+      Check (Pair_Arena.Is_Empty (G_From),
+             "meld: pairing source is emptied");
 
       --  Sort the oracle so that the drain order can be compared against it
 
@@ -648,6 +661,7 @@ procedure Heaps_Test is
          Heaps.Sorted.Extract_Min (S_Into, S_Key);
          Arena.Extract_Min (L_Into, L_Key);
          Skew_Arena.Extract_Min (Q_Into, Q_Key);
+         Pair_Arena.Extract_Min (G_Into, G_Key);
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
@@ -661,10 +675,12 @@ procedure Heaps_Test is
          Check (S_Key = Oracle (I), "meld: sorted drain matches the oracle");
          Check (L_Key = Oracle (I), "meld: leftist drain matches the oracle");
          Check (Q_Key = Oracle (I), "meld: skew drain matches the oracle");
+         Check (G_Key = Oracle (I),
+                "meld: pairing drain matches the oracle");
          Check (A_Key = B_Key and A_Key = D_Key and A_Key = C_Key
                 and A_Key = W_Key and A_Key = M_Key and A_Key = V_Key
                 and A_Key = P_Key and A_Key = S_Key and A_Key = L_Key
-                and A_Key = Q_Key,
+                and A_Key = Q_Key and A_Key = G_Key,
                 "meld: the implementations agree");
          Check (B_Key >= Prev, "meld: keys come out in non-decreasing order");
          Prev := B_Key;
@@ -681,6 +697,8 @@ procedure Heaps_Test is
              "meld: leftist empty after draining");
       Check (Skew_Arena.Is_Empty (Q_Into),
              "meld: skew empty after draining");
+      Check (Pair_Arena.Is_Empty (G_Into),
+             "meld: pairing empty after draining");
    end Test_Meld;
 
    procedure Sort (Keys : in out Key_Array; Last : Natural);
@@ -700,13 +718,14 @@ procedure Heaps_Test is
       end loop;
    end Sort;
 
-   --  The arenas: several trees sharing one pool. There are two of them now,
-   --  the leftist and the skew, and they differ in nothing this suite can see
-   --  -- same interface, same contracts, same claims about the free chain and
-   --  about the trees an operation does not name -- so the tests below are
-   --  written once as a generic and run once per arena. A pool is package
-   --  state rather than an object, so every test calls Clear first; that, and
-   --  nothing else, is what keeps them independent of one another.
+   --  The arenas: several trees sharing one pool. There are three of them
+   --  now -- the leftist, the skew and the pairing -- and they differ in
+   --  nothing this suite can see: same interface, same contracts, same claims
+   --  about the free chain and about the trees an operation does not name --
+   --  so the tests below are written once as a generic and run once per
+   --  arena. A pool is package state rather than an object, so every test
+   --  calls Clear first; that, and nothing else, is what keeps them
+   --  independent of one another.
    --
    --  Two properties here have no analogue in the array heaps and so are
    --  checked nowhere else in this program. Room is the arena's own
@@ -1061,6 +1080,17 @@ procedure Heaps_Test is
       Extract_Min => Skew_Arena.Extract_Min,
       Meld        => Skew_Arena.Meld);
 
+   package Pairing_Suite is new Arena_Suite
+     (Kind        => "pairing",
+      Nodes       => Pair_Arena.Nodes,
+      Clear       => Pair_Arena.Clear,
+      Room        => Pair_Arena.Room,
+      Is_Empty    => Pair_Arena.Is_Empty,
+      Size_Of     => Pair_Arena.Size_Of,
+      Peek_Min    => Pair_Arena.Peek_Min,
+      Insert      => Pair_Arena.Insert,
+      Extract_Min => Pair_Arena.Extract_Min,
+      Meld        => Pair_Arena.Meld);
 
 begin
    --  Exercise both sides of full and partial 256-key blocks. In particular,
@@ -1086,6 +1116,7 @@ begin
    for N of Churn_Sizes loop
       Leftist_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
+      Pairing_Suite.Test_Arena_Churn (N);
    end loop;
 
    for N of Sizes loop
@@ -1094,6 +1125,7 @@ begin
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
+      Pairing_Suite.Test_Arena (N);
       Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);
@@ -1137,12 +1169,21 @@ begin
       Skew_Suite.Test_Arena_Meld (N, 0);
       Skew_Suite.Test_Arena_Meld (0, N);
       Skew_Suite.Test_Arena_KWay (N, 16);
+
+      Pairing_Suite.Test_Arena_Meld (N, N);
+      Pairing_Suite.Test_Arena_Meld (N, 1);
+      Pairing_Suite.Test_Arena_Meld (1, N);
+      Pairing_Suite.Test_Arena_Meld (N, 0);
+      Pairing_Suite.Test_Arena_Meld (0, N);
+      Pairing_Suite.Test_Arena_KWay (N, 16);
    end loop;
 
    Leftist_Suite.Test_Arena_Meld (0, 0);
    Leftist_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);
    Skew_Suite.Test_Arena_KWay (1, 16);
+   Pairing_Suite.Test_Arena_Meld (0, 0);
+   Pairing_Suite.Test_Arena_KWay (1, 16);
 
    if Failures = 0 then
       Put_Line ("all heap tests passed");

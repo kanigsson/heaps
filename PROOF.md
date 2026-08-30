@@ -743,3 +743,230 @@ And the benchmark can price the rank field, which is the one measurement in the
 collection with everything else held fixed. OBSERVATIONS.md has it: a quarter
 to a third faster wherever extraction dominates, and losing by up to a factor
 of 1.8 wherever insertion into a large tree does.
+
+# The third arena
+
+`Heaps.Pairing` is the third explicit-tree unit and the first whose tree is
+multiway. The section *A weaker structure is not a harder proof* above ends
+with a prediction -- that a structure whose invariant exists only to support an
+asymptotic bound pays for it in every obligation and is repaid in none, so the
+*pairing* heap should be a cheaper proof than its bounded siblings. Half of
+that came true and half of it did not, and the half that did not is the
+interesting one.
+
+## The invariant was cheaper, exactly as predicted
+
+The node record is the leftist and skew node with two fields renamed: a node
+names its first child and its next sibling instead of its left and right
+subtree. That is the child-sibling correspondence, and under it a multiway tree
+*is* a binary tree, so every clause of `Node_In_Use` carries over unchanged --
+the size, the cached model, the parent agreement, the distinctness of the two
+links.
+
+One clause changes and it changes in the cheap direction. The binary arenas
+require a node to dominate both of its links; this one requires it to dominate
+its child link only, because a node's siblings are the other children of its
+parent and a pairing heap never orders one child against another. Writing that
+out:
+
+```ada
+--  skew
+and then (for all E of S.Sub (I) => S.Keys (I) <= E)
+--  pairing
+and then (for all E of Sub_Of (S, S.Links (I).Child) => S.Keys (I) <= E)
+```
+
+A weaker hypothesis in the invariant is a weaker hypothesis everywhere it is
+used, which normally costs something. It costs nothing here for the reason the
+skew section gives: no postcondition in the unit mentions the shape of the
+tree, and the one that comes closest -- the root is a lower bound of its
+tree -- reads the *root's* clause, where the sibling list is empty and the two
+readings coincide.
+
+One clause also went away, and it is worth recording as a rule.
+`S.Keys (I) <= S.Keys (S.Links (I).Child)` was in the invariant, copied from
+the binary arenas. It is *implied* by the quantified clause above, because a
+child's own key occurs in the child's cached multiset, so it added nothing --
+and it cost a great deal, because an operation that puts a *different* node at
+the head of a child list has to re-derive it from scratch, where the quantified
+clause survives untouched on the grounds that the list still holds the same
+keys. A redundant conjunct in an invariant is not free: it is an extra
+obligation at every point that re-establishes the invariant, discharged from
+whatever happens to be at hand.
+
+## The algorithm was not cheaper, and the reason is the stack
+
+The prediction was about the invariant, and the invariant is where it held. It
+said nothing about the *operations*, and this is the unit where they cost more
+than both predecessors put together.
+
+The first version was the direct one. Extraction detached the root's children
+as a free-standing list and handed it to a recursive `Merge_Pairs` with the
+size of the list as its variant, in the shape the algorithm is always written
+in: take two nodes off the front, merge them, recurse on the rest, merge the
+two results. It proved at `--level=2`, which is *better* than either binary
+arena manages, and it was worthless:
+
+```
+$ ./deep
+filled, size 1048576
+raised STORAGE_ERROR : stack overflow or erroneous memory access
+```
+
+A root that has taken n insertions has n children, because that is what O(1)
+insertion means here, so the first extraction after a fill recurses n / 2 deep.
+The skew arena's header carries a caveat about recursion depth that nothing in
+the benchmark ever triggered; the pairing heap triggers it on the first
+extraction of every workload in the suite. A proof of termination is not a
+bound on the stack, and the difference is not academic.
+
+## Fusing in place, so that nothing above has to be repaired
+
+Turning the fold into two loops is where the work went, and the shape it
+settled into is worth writing down, because the obvious shape does not work.
+
+The obvious shape detaches the pair it is about to merge. That is what the skew
+arena's merge does and what the recursive version here did, and it is fine at
+the *head* of a list and nowhere else: a node in the middle of a child list has
+a predecessor whose cached multiset covers it, so cutting it out leaves that
+predecessor's cache stale, and its predecessor's, and so on up to the node the
+list hangs from. Detaching costs O(depth) repair, which is the walk the cached
+model exists to avoid.
+
+So the fold's primitive does not detach. `Fuse` merges a list element with the
+one after it and puts the winner back in the same place, and its postcondition
+is the whole design:
+
+```ada
+and then Links (P).Parent  = Prev
+and then Links (P).Sibling = Rest
+and then Links (P).Size    = Snap'Old.Links (A).Size
+and then Sub (P)           = Snap'Old.Sub (A)
+```
+
+The result stands exactly where its first operand stood and caches exactly what
+it cached. A fusion is therefore invisible from anywhere above it, and two
+consequences follow that between them pay for the whole rewrite. Nothing up the
+list needs repairing, and neither loop carries a multiset of its own -- the
+model of the fold is *nothing at all*, because the node the list hangs from is
+above every pair the fold touches and its cache is preserved by every step.
+
+That second consequence is why `Extract_Min` no longer detaches its root's
+children before folding them. It folds them with the root still in place and
+releases it afterwards, purely so that there is a node above the list for the
+frame to be stated about. The multiset reasoning of the entire operation is
+then one lemma call in `Extract_Min`, against the chain of eight in the version
+that folded a free-standing list.
+
+## The regress that a position array breaks
+
+The second pass walks *back up* the list, fusing the last two elements over and
+over, and that walk needs a fact the flat invariant cannot supply: that the
+node above the one it is standing on is itself on the list and has a
+predecessor. `Valid` says that a node with a parent is either that parent's
+child or its sibling, which is exactly the ambiguity in question, and every
+attempt to carry the fact as a loop invariant regresses by one level per step --
+to know about `Parent (Cur)` you must already know about `Parent (Parent (Cur))`.
+
+The device that breaks it is the one the free chain already uses. A ghost array
+gives each node its position along the list, 0 for a node not on it, with one
+quantified invariant:
+
+```ada
+(for all X in 1 .. Capacity =>
+   (if Depth (X) /= 0
+    then In_Use (Snap, X)
+         and then Links (X).Parent /= 0
+         and then (if Depth (X) = 1
+                   then Links (X).Parent = Root
+                        and then Links (Root).Child = X
+                   else Links (Links (X).Parent).Sibling = X
+                        and then Depth (Links (X).Parent) = Depth (X) - 1)))
+```
+
+A statement about *all* nodes has no regress to run: the node above one at
+depth d is at depth d - 1, is on the list by the same clause, and the walk
+stops at depth 1, where the predecessor is the node the list hangs from and
+nowhere else. It is `Chain_Pos` for a child list, and it plays the same part --
+a value that decreases by one from a node to its predecessor, ruling out both a
+cycle and an exit into another tree, with no reachability relation and no
+induction. The first pass builds it as it goes; being ghost, it costs nothing
+at run time.
+
+The second pass's variant is that same depth, decreasing. The first pass's is
+the size of what is left of the list, which needs its own small argument: a
+fusion puts one node back where two came off, so `2 * Rank + Size_Now (Cur)`
+never exceeds the size of the list, which is what bounds the number of
+positions the ghost array is asked to hold.
+
+## Cycles are ruled out by the size field, and it takes four equations
+
+`Fuse` touches five nodes -- the two fused, the one before, the one after, and
+the child the loser is pushed in front of -- and every clause it re-establishes
+needs them to be distinct. None of that distinctness is in the invariant. All
+of it follows from the size field, because a node's size is one more than its
+two links' and a cycle would make some node hold more nodes than it holds:
+
+```ada
+pragma Assert (Links (A).Size = 1 + Size_Now (Links (A).Child) + Links (B).Size);
+pragma Assert (Links (B).Size = 1 + Size_Now (Links (B).Child) + Size_Now (Rest));
+pragma Assert (Links (Prev).Size >= 1 + Links (A).Size);
+```
+
+Three facts, and every pair of the four is distinct by linear arithmetic. The
+third is the one that took longest to find: it says only that A is one of the
+predecessor's two links, and it is what closes the three-node cycles that the
+first two leave open.
+
+Two things about this were worth the time they cost. The first is that the size
+field, which exists in these units so that the *contracts* can state their
+effect on a tree's size, turns out to be what rules out cycles -- an
+acyclicity argument for free, from a field that was added for another purpose,
+where the alternative is a reachability predicate. The second is that three of
+these assertions were false before they were true, because a `/=` between two
+indices is vacuously false when both are 0 and the empty-list cases were not
+guarded. GNATprove reported them as timeouts rather than as counterexamples,
+which is the least helpful way to be told that what you asked for is not true;
+the tell was that adding time did not help.
+
+## Numbers
+
+361 checks, against the skew unit's 154 and the leftist unit's 165. The
+difference is not the structure, it is the fold: `Fuse` and `Fold_Children`
+together carry 77 `Assert` and `Loop_Invariant` pragmas, and the body 109,
+where each binary arena's whole body has 26.
+
+`--level=4` discharges all 361 in a little under three minutes on this machine,
+from a session cleaned by hand for the reason the section above records. That
+is five times the skew arena's 30 seconds, and the same two subprograms are
+where it goes. `--level=2` leaves
+five, all of them the same clause of `Node_In_Use` -- the size equation -- in
+`Fuse`. That puts the pairing arena where the other two are: proved at
+`--level=4`, and the implicit heaps content with `--level=2`.
+
+The recursive version of the fold, before the stack made it unusable, needed
+206 checks and proved every one at `--level=2`. The 155 checks and two proof
+levels between that version and this one are what an iterative fold over a
+linked list costs, and none of them is about pairing heaps.
+
+## What the prediction should have said
+
+The skew section's rule was: a structure whose invariant exists only to support
+an asymptotic bound pays for that invariant in every obligation and is repaid
+in none. It is still right, and the pairing heap's invariant is the cheapest of
+the three arenas for exactly that reason.
+
+What it missed is that removing structure from the *invariant* can add
+structure to the *algorithm*. A leftist heap's shape invariant bounds its
+spine, and the bound is what lets its merge be a recursion of depth log n that
+nothing in a proof has to say anything about. The pairing heap has no shape
+invariant to bound anything, so the same recursion is of depth n, so the fold
+must be iterative, so the walk up the list needs a position array and the loops
+need a page of invariants apiece. The cost did not disappear when the invariant
+did. It moved from the predicate to the program.
+
+The sharper rule, then: an invariant that only supports an asymptotic bound is
+not paid for in the proof, but the bound it supports may be. Where the
+structure's guarantee is what keeps a recursion shallow, dropping it does not
+buy a cheaper proof -- it buys a different program, and the proof follows the
+program.

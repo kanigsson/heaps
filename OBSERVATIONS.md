@@ -23,13 +23,16 @@ Results at `n = 1_000_000`:
 | weak | 18.15 | 170.71 | 86.46 | 3.68 | 22.75 |
 | leftist | 102.39 | 508.04 | 288.81 | 165.35 | 9.55 |
 | skew | 130.42 | 376.45 | 238.22 | 301.17 | 7.64 |
+| pairing | 6.63 | 328.27 | 160.96 | 5.78 | 5.64 |
 | min-max | 13.04 | 174.84 | 88.13 | 12.66 | 13.66 |
 | interval | 17.75 | 108.53 | 65.40 | 53.44 | 36.05 |
 
-The two arena rows are from the later run that added the skew heap, so that the
-pair can be compared against each other; the rest are as first measured. The
-binary heap was re-measured in both and reproduces within 5% on every column,
-which is what makes the two sets comparable at all.
+The `leftist` and `skew` rows are from the later run that added the skew heap,
+so that the pair can be compared against each other; the `pairing` row is from
+the later run still that added the pairing heap; the rest are as first
+measured. The binary heap was re-measured in each and reproduces within 5% on
+every column, which is what makes the sets comparable at all, and the two older
+arena rows reproduce within 7% in the pairing run.
 
 ### d-ary heaps
 
@@ -373,6 +376,142 @@ The proof came out the same way round: the skew unit is 154 checks against the
 leftist unit's 165, and the eleven that are gone are the rank field's. See
 PROOF.md.
 
+## Pairing heap
+
+The pairing heap is the third arena and the first structure here whose tree is
+multiway. It keeps no rank and no shape invariant: a merge compares two roots
+and hangs the loser on the winner as its first child, which is one comparison
+and four assignments whatever the two operands hold, and insertion and meld are
+that merge. Everything is paid for at extraction, where the root's children are
+a list of trees that has to be folded back into one.
+
+All figures below are from one run, and the `leftist` and `skew` columns are
+that run's:
+
+| n | scenario | `leftist` | `skew` | `pairing` |
+|---|----------|----------:|-------:|----------:|
+| 1 000 000 | `fill` | 104.17 | 138.00 | 6.63 |
+| 1 000 000 | `drain` | 512.24 | 377.76 | 328.27 |
+| 1 000 000 | `churn` | 275.14 | 233.68 | 160.96 |
+| 1 000 000 | `replace-forward` | 116.56 | 77.09 | 81.00 |
+| 1 000 000 | `insert-asc` | 168.24 | 296.43 | 5.78 |
+| 1 000 000 | `insert-desc` | 10.17 | 7.65 | 5.64 |
+| 1 000 000 | `meld-accumulate` | 1 193.13 | 1 171.31 | 29.38 |
+| 1 000 000 | `meld-into-full` | 127.50 | 170.00 | 13.75 |
+
+### An insertion that does not walk anything
+
+The first column of the table is the whole point of the structure, and it does
+not need a graph:
+
+| n | `fill` | `insert-asc` | `insert-desc` | `meld-into-full` |
+|---|-------:|-------------:|--------------:|-----------------:|
+| 1 000 | 6.59 | 5.69 | 5.41 | 6.88 |
+| 10 000 | 6.38 | 5.65 | 5.36 | 6.88 |
+| 100 000 | 6.39 | 5.82 | 5.53 | 6.88 |
+| 1 000 000 | 6.63 | 5.78 | 5.64 | 13.75 |
+
+Four columns that are flat over three decades. Every other mergeable structure
+in the catalogue has an insertion that walks something -- a right spine here, a
+path to the root there -- and the length of that walk is what grows with `n`.
+This one writes the same four links into the same two nodes at any size, so the
+only thing left to grow is the cache, and the last row is where a million nodes
+of pool stop fitting in one.
+
+`insert-asc` is the case worth dwelling on. It is the adversarial order for
+both spine-walking arenas: every key is the new largest, so every insertion
+walks the accumulator's whole right spine, and the section above prices that at
+168 and 296 ns/op at a million keys. Here it is 5.78, and it is *below* random
+`fill`, because an ascending key always loses its comparison and becomes a
+child immediately while a random one wins half the time and takes the other
+branch. The structure has no adversarial insertion order, because it has no
+insertion walk to lengthen.
+
+The comparison outside the arenas is just as one-sided at the insertion end.
+`fill` at 6.63 is the fastest of the verified catalogue -- the binary heap is at
+10.02, the 16-ary heap at 6.76 -- and `insert-desc` at 5.64 beats every implicit
+heap by a factor of two or more, because a descending key in an implicit heap
+still sifts up through the levels it belongs above. Only the binary heap's
+`insert-asc`, which stops after one comparison at 1.93, is faster than anything
+in this table.
+
+### And an extraction that does all of it
+
+| n | `drain` | `churn` | skew `drain` | binary `drain` |
+|---|--------:|--------:|-------------:|---------------:|
+| 1 000 | 92.71 | 53.16 | 67.17 | 22.10 |
+| 10 000 | 133.18 | 72.11 | 111.74 | 35.48 |
+| 100 000 | 192.08 | 97.83 | 197.68 | 51.11 |
+| 1 000 000 | 328.27 | 160.96 | 377.76 | 92.12 |
+
+The pairing heap is the fastest of the three arenas at `drain` from
+`n = 100 000` upwards and behind the skew arena below that, which is the
+two-pass fold showing its shape. The fold's work is proportional to the number of children
+the removed root has, and after a fill that number is large -- a root that has
+taken n insertions has n children -- so the first extraction of a drain is
+linear and the ones after it are not. That is the amortized bound doing exactly
+what it promises: the column grows like the logarithm and the constant is paid
+once.
+
+Against the binary heap it is between three and a half and four times slower
+over the whole range, and that is not the algorithm. It is the same thing the leftist
+section records: an implicit heap's sift walks contiguous array slots while an
+arena's fold chases indices into a pool of a million nodes, and at these sizes
+what a structure costs is the memory it walks over. `churn`, which alternates
+an extraction with an insertion and so pays the O(1) insertion once per
+extraction, closes the gap to a factor of three and puts the pairing heap ahead
+of the leftist arena by 41 per cent and of the skew arena by 31.
+
+`replace-forward` is the one column where the skew heap stays ahead, at 77.09
+against 81.00. That workload keeps the queue size fixed and replaces each
+extracted key with a greater one, so the tree never grows and the extraction
+constant is what shows -- and there the skew heap's smaller node and shorter
+fold win by a nose. It is a 5 per cent difference on a workload built out of
+the operation the pairing heap is worst at.
+
+### The meld is the one that does not grow
+
+| n | `leftist` | `skew` | `pairing` |
+|---|----------:|-------:|----------:|
+| 1 000 | 96.25 | 49.38 | 8.75 |
+| 10 000 | 155.63 | 106.88 | 9.38 |
+| 100 000 | 278.75 | 238.75 | 12.50 |
+| 1 000 000 | 1 193.13 | 1 171.31 | 29.38 |
+
+`meld-accumulate` folds sixteen heaps of `n / 16` keys into an accumulator, so
+the operands are large and both spine-walking arenas walk them: their columns
+grow by a factor of 12 and 24 over three decades. The pairing column grows by
+3.4, and what is growing there is the cache again rather than the operation --
+a meld is a comparison and four links whatever the two trees hold, which is why
+it is the only O(1) meld in the catalogue and why this is the widest margin the
+three arenas show on any scenario: a factor of 40 at a million keys.
+
+Against the heaps that rebuild the margin is not a factor of 40 but of four
+orders of magnitude, and the meld table above has it. That comparison is about
+the arena and not about the pairing heap; this one is about the pairing heap.
+
+The caveat from the meld table applies to the first three rows here as much as
+anywhere: a measurement is sixteen melds, so at 8.75 ns/op the figure is a few
+hundred nanoseconds of wall clock. What the column establishes is the absence of
+growth, not its own second digit.
+
+### What the three arenas are worth together
+
+The three units differ in one design decision each and agree in everything else
+-- same arena, same free chain, same cached model, same contracts, same tests --
+so the set prices two decisions rather than one. The leftist-to-skew step
+prices a worst-case guarantee: what the rank field buys is a bounded right
+spine, and it costs a field per node and a comparison per merge step. The
+skew-to-pairing step prices the spine itself: what a multiway tree buys is a
+merge that does not walk at all, and it costs the whole of the extraction,
+which is where the two-pass fold appears.
+
+Read as a set, the three say that for mergeable workloads the walk at insertion
+time is the expensive part and the fold at extraction time is not. Every
+scenario dominated by insertion or meld goes to the pairing heap by between one
+and two orders of magnitude; the scenarios dominated by extraction go to it as
+well at the sizes that matter, and the one it loses it loses by 5 per cent.
+
 ## Forward replacement
 
 `replace-forward` models queues whose priorities advance: it extracts the
@@ -493,8 +632,8 @@ Every entry in the catalogue has the operation. Five append and rebuild -- the
 binary heap, the three d-ary instances, the weak heap, the min-max heap and the
 interval heap; three insert the keys one at a time, because their insertion is
 cheap enough that this is the better algorithm -- the unsorted array, the
-block-min directory and the beap; the sorted array merges two runs; and the two
-arenas splice. The open entry preserves a lazy destination by concatenating
+block-min directory and the beap; the sorted array merges two runs; and the
+three arenas splice. The open entry preserves a lazy destination by concatenating
 physical keys, and otherwise chooses buffered insertion or an interval-heap
 rebuild from the current sizes.
 
@@ -563,6 +702,10 @@ one-key heaps into it.
 | skew | 10 000 | 115.63 | 78.13 |
 | skew | 100 000 | 246.25 | 103.75 |
 | skew | 1 000 000 | 1 198.75 | 171.25 |
+| pairing | 1 000 | 8.75 | 6.88 |
+| pairing | 10 000 | 9.38 | 6.88 |
+| pairing | 100 000 | 12.50 | 6.88 |
+| pairing | 1 000 000 | 29.38 | 13.75 |
 
 This table is from a later run than the main table above, re-measured in full
 when the remaining six melds were added so that every figure in it comes from
@@ -571,7 +714,10 @@ already there reproduce their earlier figures within about 15%. The `leftist`
 row is later still: it was measured again when the arena became the only
 leftist unit, and it replaces two rows, one per unit. The `open-buffered` row
 is from the still later run that added its meld adapter; the established rows
-in that run reproduced closely, and all checksums agreed.
+in that run reproduced closely, and all checksums agreed. The `pairing` row is
+from the latest run of all, in which `leftist` and `skew` came out at 1 193.13
+and 1 171.31 on `meld-accumulate` at a million keys against the 1 439.38 and
+1 198.75 recorded here.
 
 The single- and double-digit entries deserve a caveat the rest do not. A
 measurement here is sixteen melds, so at those magnitudes the figure is a few
@@ -746,16 +892,17 @@ size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
 
 The meld scenarios are checksummed the same way, over a drain of the melded
-accumulator outside the timed phase, and all fourteen entries agree at every
+accumulator outside the timed phase, and all fifteen entries agree at every
 size. Between them these melds are a bottom-up rebuild at four different
 arities, a bottom-up build over distinguished ancestors, a two-level
 trickle-down, a paired double-ended build, a block copy, three runs of single
-insertions, a backwards merge of two sorted runs, a lazy concatenation and a
-splice of two right spines. They have very little in common beyond the multiset
-they are supposed to produce, so the agreement is worth something. The
-arenas are the useful ones to have in that set: they are the only entries that
-never move a key, so they share no code path with any of the others beyond the
-key stream itself. The two of them agree with each other on every scenario and
-size as well, which is a check the pair gives for free -- they build very
-different trees out of the same keys, and a wrong answer from either would have
-to be a wrong answer that the other reproduced exactly.
+insertions, a backwards merge of two sorted runs, a lazy concatenation, a
+splice of two right spines and a splice that is four assignments. They have
+very little in common beyond the multiset they are supposed to produce, so the
+agreement is worth something. The arenas are the useful ones to have in that
+set: they are the only entries that never move a key, so they share no code
+path with any of the others beyond the key stream itself. All three of them
+agree with each other on every scenario and size as well, which is a check the
+group gives for free -- they build very different trees out of the same keys,
+one of them not even a binary tree, and a wrong answer from any of them would
+have to be a wrong answer the other two reproduced exactly.

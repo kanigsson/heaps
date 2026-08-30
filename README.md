@@ -14,6 +14,7 @@ Verified priority queues backed by arrays. No access types.
 | Beap | O(sqrt n) | O(sqrt n) min | yes | Triangular layers, two parents per node |
 | Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a shared node arena |
 | Skew heap | O(log n)* | O(log n)* min | yes | As the leftist heap with no rank field; * amortized |
+| Pairing heap | O(1) | O(log n)* min | yes | Multiway tree, child and sibling links; * amortized |
 | Block-min directory | O(1) | O(n / B + B) min | yes | One winner per block, B = 256 |
 | Unsorted array | O(1) | O(n) min | yes | Baseline |
 | Sorted array | O(n) | O(1) min | yes | Baseline |
@@ -73,6 +74,39 @@ random fill and 82 per cent on ascending input -- because the right spine an
 insertion walks is the very thing the rank field is there to bound. See
 [OBSERVATIONS.md](OBSERVATIONS.md).
 
+The pairing heap is the third arena and the first multiway tree. It keeps no
+rank, no balance condition and no shape invariant of any kind: two trees are
+merged by comparing their roots and hanging the loser on the winner as its
+first child, which is a constant number of assignments, and insertion and meld
+are that merge. All three are O(1) outright rather than amortized, and the
+whole cost is paid at extraction, where removing the root leaves its children
+as a list of trees that has to be folded back into one. This unit folds it in
+the standard two passes -- left to right merging disjoint neighbouring pairs,
+then right to left folding the results -- because folding it in one pass with
+an accumulator is a page shorter and is the classic way to lose the amortized
+bound.
+
+What lets a multiway tree live in the same node record as the two binary ones
+is the child-sibling correspondence: a node names its first child and its next
+sibling, so the children of a node are a linked list and the whole structure is
+a binary tree read differently. The invariant is therefore nearly the same
+predicate as the skew heap's, and it differs in exactly one clause -- where the
+binary heaps order a node against both its links, this one orders a node
+against its child link only, because a node's siblings are its equals and not
+its inferiors.
+
+The measurement is the sharpest in the collection. Against the other two
+arenas at `n = 1_000_000`, `fill` is 6.63 ns/op against 104 and 138, and
+`insert-asc` -- the order that makes both spine-walking arenas walk the whole
+spine -- is 5.78 against 168 and 296, flat across every size measured because
+an insertion is four assignments whatever the tree holds. It is also the
+fastest `fill` and the fastest `insert-desc` of every verified heap here, the
+implicit ones included; only the unverified open entry fills faster. Extraction is where it pays: `drain` at 328 is the best of the three
+arenas but still three and a half times the binary heap's, which is what an
+explicit tree costs. And its meld is the only O(1) one in the catalogue, which
+`meld-accumulate` shows at 29 ns/op against 1 193 and 1 171 for the two heaps
+that splice two spines. See [OBSERVATIONS.md](OBSERVATIONS.md).
+
 The block-min directory occupies the point between the unsorted baseline and
 a tree. Keys remain unsorted, while a compact second array remembers the
 winner of each 256-key block. Insertion touches one entry; extraction scans the
@@ -124,6 +158,7 @@ rebuild across the whole set.
 | Block-min directory | O(m) | yes | one insertion per key |
 | Leftist heap | O(log n) | yes | a splice of two right spines |
 | Skew heap | O(log n)* | yes | as the leftist heap, swapping unconditionally |
+| Pairing heap | O(1) | yes | hang the larger root on the smaller |
 
 The implicit heaps rebuild rather than splice, which is asymptotically worse
 and deliberately so: rebuilding by repeated insertion would be O(m log n) and
@@ -158,13 +193,19 @@ array to two live regions rather than three: the output slot is always above
 the part of `Into`'s own run still to be read, so no key is ever copied out of
 the way.
 
-The leftist heap is the only entry whose meld is a splice, and it is the reason
-its pool is shared rather than private. Both shapes were measured before the
-private one was dropped: on a workload that folds sixteen *one-key* heaps into
-a large accumulator the two are indistinguishable, and every rebuilding heap is
-four orders of magnitude behind both; on one that folds sixteen heaps of
-`n / 16` keys the copy is the entire cost and the shared pool is some three
-hundred times faster. See [OBSERVATIONS.md](OBSERVATIONS.md).
+The three arenas are the entries whose meld is a splice, and that is the reason
+their pool is shared rather than private. Both shapes were measured on the
+leftist heap before the private one was dropped: on a workload that folds
+sixteen *one-key* heaps into a large accumulator the two are indistinguishable,
+and every rebuilding heap is four orders of magnitude behind both; on one that
+folds sixteen heaps of `n / 16` keys the copy is the entire cost and the shared
+pool is some three hundred times faster.
+
+The three do not splice equally. A leftist or skew meld walks the right spine
+of both operands, so it is logarithmic and its cost grows with them; a pairing
+meld compares two keys and writes four links, so it does not. Folding sixteen
+operands of `n / 16` keys costs 1 193 and 1 171 ns/op at `n = 1_000_000`
+against the pairing heap's 29. See [OBSERVATIONS.md](OBSERVATIONS.md).
 
 ## Planned
 
@@ -191,7 +232,6 @@ rather than retrofitted onto the array-backed ones.
 
 - Binomial heap
 - Skew binomial heap
-- Pairing heap
 - Rank-pairing heap
 - Fibonacci heap
 - Sorted linked list
@@ -228,7 +268,7 @@ checks:
 
 ### Current status
 
-A `--level=4` run discharges all 4 150 checks, which is every entry in the
+A `--level=4` run discharges all 4 511 checks, which is every entry in the
 tables above and every `Meld` in them. `heaps_test` passes on the whole
 catalogue.
 
@@ -253,17 +293,18 @@ gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 `heaps_test` checks results against a proved linear-scan oracle. It also checks
-extraction order and key preservation. The two arenas are checked differently
+extraction order and key preservation. The three arenas are checked differently
 on two points, because with several trees in one array there is no range of
 slots holding a given tree's keys and so no scan to compare against: their
 oracle is kept by the test, and it additionally checks an arena's free count
 across every operation, and that a tree an operation did not name comes back
 with the keys it had. Those checks are written once and run once per arena,
-since the two present the same interface and claim the same contracts.
+since all three present the same interface and claim the same contracts.
 
-Every implicit heap goes through at `--level=2`. The two arenas, whose trees
-are linked nodes rather than array indices, need `--level=4`; each leaves one
-check unproved below that. See [PROOF.md](PROOF.md) for what those proofs took
+Every implicit heap goes through at `--level=2`. The three arenas, whose trees
+are linked nodes rather than array indices, need `--level=4`. Below that the
+leftist and skew units leave one check each and the pairing unit leaves five,
+all of them in the operation that relinks nodes. See [PROOF.md](PROOF.md) for what those proofs took
 and what carried them.
 
 ## Benchmarks
