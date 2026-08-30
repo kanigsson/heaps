@@ -778,9 +778,6 @@ package body Heaps.Interval with SPARK_Mode is
       Base   : constant Extended_Index := Into.Last;
       Cap    : constant Extended_Index := Into.Capacity;
 
-      Joined : KM.Multiset with Ghost;
-      --  The model of the concatenation, which the rebuild has to preserve
-
       Prev : Key_Array (1 .. Cap) with Ghost;
       --  See the comment on the homonym in Heaps.Unsorted.Meld
    begin
@@ -818,29 +815,40 @@ package body Heaps.Interval with SPARK_Mode is
          Models.Lemma_Sum_Empty (Models.Occurrences (Before, Base));
       end if;
 
-      Joined := Model (Into);
+      Build (Into);
 
+      From.Last := 0;
+   end Meld;
+
+   -----------
+   -- Build --
+   -----------
+
+   procedure Build (H : in out Heap) is
+      Initial_Model : constant KM.Multiset := Model (H) with Ghost;
+      Initial_Last  : constant Extended_Index := H.Last;
+   begin
       --  First pass: turn every pair of slots into a well-formed interval.
-      --  The appended keys landed in whatever order From held them, and both
-      --  sifts want Is_Paired from the start. A node holding a lone key has
-      --  its two ends in one slot and needs nothing.
+      --  The keys may be in any order, and both sifts want Is_Paired from the
+      --  start. A node holding a lone key has its two ends in one slot and
+      --  needs nothing.
 
-      for M in 1 .. Node_Count (Into) loop
-         if 2 * M <= Into.Last
-           and then Into.Keys (2 * M - 1) > Into.Keys (2 * M)
+      for M in 1 .. Node_Count (H) loop
+         if 2 * M <= H.Last
+           and then H.Keys (2 * M - 1) > H.Keys (2 * M)
          then
-            Swap (Into, 2 * M - 1, 2 * M);
+            Swap (H, 2 * M - 1, 2 * M);
          end if;
 
-         pragma Loop_Invariant (Into.Last = Base + From.Last);
-         pragma Loop_Invariant (Model (Into) = Joined);
+         pragma Loop_Invariant (H.Last = Initial_Last);
+         pragma Loop_Invariant (Model (H) = Initial_Model);
          pragma Loop_Invariant
            (for all B in 1 .. M =>
-              Into.Keys (Slot (Into.Last, True, B))
-              <= Into.Keys (Slot (Into.Last, False, B)));
+              H.Keys (Slot (H.Last, True, B))
+              <= H.Keys (Slot (H.Last, False, B)));
       end loop;
 
-      pragma Assert (Is_Paired (Into));
+      pragma Assert (Is_Paired (H));
 
       --  Second pass: place the two ends of each node, bottom-up. Sifting the
       --  low end of a node happens while its high end is still unplaced, so
@@ -848,19 +856,17 @@ package body Heaps.Interval with SPARK_Mode is
       --  not touching; the high end is then sifted against a low side that is
       --  already in order.
 
-      for M in reverse 1 .. Node_Count (Into) loop
-         Sift_Down (Into, M, True, M, M + 1);
-         Sift_Down (Into, M, False, M, M);
+      for M in reverse 1 .. Node_Count (H) loop
+         Sift_Down (H, M, True, M, M + 1);
+         Sift_Down (H, M, False, M, M);
 
-         pragma Loop_Invariant (Into.Last = Base + From.Last);
-         pragma Loop_Invariant (Model (Into) = Joined);
-         pragma Loop_Invariant (Is_Paired (Into));
-         pragma Loop_Invariant (Nested_From (Into, True, M));
-         pragma Loop_Invariant (Nested_From (Into, False, M));
+         pragma Loop_Invariant (H.Last = Initial_Last);
+         pragma Loop_Invariant (Model (H) = Initial_Model);
+         pragma Loop_Invariant (Is_Paired (H));
+         pragma Loop_Invariant (Nested_From (H, True, M));
+         pragma Loop_Invariant (Nested_From (H, False, M));
       end loop;
-
-      From.Last := 0;
-   end Meld;
+   end Build;
 
    ------------
    -- Insert --

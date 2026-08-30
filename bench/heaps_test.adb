@@ -17,6 +17,7 @@ with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
+with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
@@ -444,6 +445,94 @@ procedure Heaps_Test is
       Check (Heaps.Interval.Is_Empty (H), "interval: empty after draining");
       Check (Sum = Back, "interval: nothing lost on the way");
    end Test_Interval;
+
+   procedure Test_Open_Proved (N : Positive);
+   procedure Test_Open_Proved (N : Positive) is
+      H     : Heaps.Open_Proved.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Low   : Key_Type := Key_Type'First;
+      High  : Key_Type := Key_Type'Last;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Open_Proved.Insert (H, K);
+         Check (Heaps.Open_Proved.Size (H) = I,
+                "open-proved: size after insert");
+      end loop;
+
+      --  Peek while the representation is still lazy, then let the first
+      --  extraction materialize the interval heap. Alternating ends checks
+      --  both the transition and the steady-state representation.
+
+      Check (Heaps.Open_Proved.Peek_Min (H) <=
+               Heaps.Open_Proved.Peek_Max (H),
+             "open-proved: lazy extrema are ordered");
+
+      for I in 1 .. N loop
+         if I mod 2 = 1 then
+            Heaps.Open_Proved.Extract_Min (H, K);
+            Check (K >= Low,
+                   "open-proved: the low end never goes back down");
+            Low := K;
+         else
+            Heaps.Open_Proved.Extract_Max (H, K);
+            Check (K <= High,
+                   "open-proved: the high end never goes back up");
+            High := K;
+         end if;
+
+         Check (Low <= High, "open-proved: the two ends have not crossed");
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Open_Proved.Is_Empty (H),
+             "open-proved: empty after draining");
+      Check (Sum = Back, "open-proved: nothing lost on the way");
+   end Test_Open_Proved;
+
+   procedure Test_Open_Proved_Meld
+     (Activate_Into, Activate_From : Boolean);
+   procedure Test_Open_Proved_Meld
+     (Activate_Into, Activate_From : Boolean)
+   is
+      Into : Heaps.Open_Proved.Heap (128);
+      From : Heaps.Open_Proved.Heap (64);
+      K    : Key_Type;
+
+      procedure Activate (H : in out Heaps.Open_Proved.Heap);
+      procedure Activate (H : in out Heaps.Open_Proved.Heap) is
+      begin
+         Heaps.Open_Proved.Extract_Min (H, K);
+         Heaps.Open_Proved.Insert (H, K);
+      end Activate;
+   begin
+      for I in 1 .. 64 loop
+         Heaps.Open_Proved.Insert (Into, Key_Type (2 * I));
+         Heaps.Open_Proved.Insert (From, Key_Type (2 * I - 1));
+      end loop;
+
+      if Activate_Into then
+         Activate (Into);
+      end if;
+      if Activate_From then
+         Activate (From);
+      end if;
+
+      Heaps.Open_Proved.Meld (Into, From);
+      Check (Heaps.Open_Proved.Is_Empty (From),
+             "open-proved meld: source is empty");
+
+      for Expected in 1 .. 128 loop
+         Heaps.Open_Proved.Extract_Min (Into, K);
+         Check (K = Key_Type (Expected),
+                "open-proved meld: drain matches the oracle");
+      end loop;
+   end Test_Open_Proved_Meld;
 
    --  Meld: every implementation that has the operation is checked against
    --  the others and against a sorted oracle built from the same keys. Sizes
@@ -1093,6 +1182,12 @@ procedure Heaps_Test is
       Meld        => Pair_Arena.Meld);
 
 begin
+   for Activate_Into in Boolean loop
+      for Activate_From in Boolean loop
+         Test_Open_Proved_Meld (Activate_Into, Activate_From);
+      end loop;
+   end loop;
+
    --  Exercise both sides of full and partial 256-key blocks. In particular,
    --  extraction moves the last key across a block boundary at these sizes.
    for N of Block_Boundary_Sizes loop
@@ -1129,6 +1224,7 @@ begin
       Test_Beap (N);
       Test_Min_Max (N);
       Test_Interval (N);
+      Test_Open_Proved (N);
       for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop
          Test_Dary (N, Arity);
       end loop;

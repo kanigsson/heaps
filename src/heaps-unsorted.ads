@@ -44,6 +44,10 @@ package Heaps.Unsorted with SPARK_Mode is
      (for all I in 1 .. H.Last => K <= H.Keys (I))
      with Ghost;
 
+   function Is_Maximum (H : Heap; K : Key_Type) return Boolean is
+     (for all I in 1 .. H.Last => H.Keys (I) <= K)
+     with Ghost;
+
    function Model (H : Heap) return Key_Multisets.Multiset is
      (Models.Occurrences (H.Keys, H.Last))
      with Ghost;
@@ -66,6 +70,12 @@ package Heaps.Unsorted with SPARK_Mode is
           Post => Is_Minimum (H, Peek_Min'Result)
                   and then (for some I in 1 .. H.Last =>
                               Peek_Min'Result = H.Keys (I));
+
+   function Peek_Max (H : Heap) return Key_Type
+     with Pre  => not Is_Empty (H),
+          Post => Is_Maximum (H, Peek_Max'Result)
+                  and then (for some I in 1 .. H.Last =>
+                              Peek_Max'Result = H.Keys (I));
 
    procedure Insert (H : in out Heap; K : Key_Type)
      with Pre  => not Is_Full (H),
@@ -96,5 +106,11 @@ package Heaps.Unsorted with SPARK_Mode is
    --  the two conjuncts above already pin down everything that is. K is a
    --  lower bound of the old contents, and the old contents are exactly the
    --  new contents plus one occurrence of K.
+
+   procedure Extract_Max (H : in out Heap; K : out Key_Type)
+     with Pre  => not Is_Empty (H),
+          Post => Size (H) = Size (H)'Old - 1
+                  and Is_Maximum (H'Old, K)
+                  and Model (H)'Old = Key_Multisets.Add (Model (H), K);
 
 end Heaps.Unsorted;

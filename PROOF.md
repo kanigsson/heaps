@@ -970,3 +970,27 @@ not paid for in the proof, but the bound it supports may be. Where the
 structure's guarantee is what keeps a recursion shallow, dropping it does not
 buy a cheaper proof -- it buys a different program, and the proof follows the
 program.
+
+## Proving the open entry by proving one transition
+
+`Heaps.Open_Proved` has two representations but no invariant that relates them
+at the same time. In lazy mode its model is the unsorted array's model and the
+interval heap is empty; in active mode its model is the interval heap's model
+and the unsorted array is empty. `Activate` is the only operation that crosses
+that boundary.
+
+The interval heap's bottom-up construction was factored out of `Meld` as
+`Interval.Build`. Its contract says that arbitrary keys become an interval
+heap without changing the size or multiset. `Activate` copies the lazy array,
+calls that operation and clears the old representation, so the wrapper proof
+reuses the existing heapification proof rather than carrying a second copy.
+
+The first removal is deliberately performed before the transition. The
+unsorted heap proves that the returned key is the requested extreme and that
+one occurrence was removed; `Activate` then preserves the remaining multiset.
+This avoids a separate lemma saying that the minimum or maximum survives an
+arbitrary heapifying permutation. The unsorted unit gained the maximum-side
+mirror of its existing operations for the same reason.
+
+The focused `Heaps.Open_Proved` run discharges 85 checks at `--level=2`. The
+complete `--level=4` project run discharges all 4 635 checks.

@@ -17,6 +17,7 @@ with Bench.Interval_Heap;
 with Bench.Leftist_Heap;
 with Bench.Min_Max_Heap;
 with Bench.Open_Heap;
+with Bench.Open_Proved_Heap;
 with Bench.Pairing_Heap;
 with Bench.Skew_Heap;
 with Bench.Sorted_Heap;
@@ -53,6 +54,7 @@ begin
    Bench.Min_Max_Heap.Runner.Run (Sizes);
    Bench.Interval_Heap.Runner.Run (Sizes);
    Bench.Open_Heap.Runner.Run (Sizes);
+   Bench.Open_Proved_Heap.Runner.Run (Sizes);
    Bench.Beap_Heap.Runner.Run (Beap_Sizes);
    Bench.Sorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Unsorted_Heap.Runner.Run (Baseline_Sizes);
@@ -67,6 +69,7 @@ begin
    Bench.Min_Max_Heap.Meld_Runner.Run (Sizes);
    Bench.Interval_Heap.Meld_Runner.Run (Sizes);
    Bench.Open_Heap.Meld_Runner.Run (Sizes);
+   Bench.Open_Proved_Heap.Meld_Runner.Run (Sizes);
    Bench.Block_Min_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Beap_Heap.Meld_Runner.Run (Beap_Sizes);
    Bench.Unsorted_Heap.Meld_Runner.Run (Baseline_Sizes);
@@ -78,4 +81,5 @@ begin
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
    Bench.Interval_Heap.Deque_Runner.Run (Sizes);
    Bench.Open_Heap.Deque_Runner.Run (Sizes);
+   Bench.Open_Proved_Heap.Deque_Runner.Run (Sizes);
 end Bench_Main;

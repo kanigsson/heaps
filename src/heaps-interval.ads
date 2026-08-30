@@ -248,6 +248,15 @@ package Heaps.Interval with SPARK_Mode is
    --  Is_Heap (From) is required only for uniformity with the rest of the
    --  family. The rebuild does not depend on it.
 
+   procedure Build (H : in out Heap)
+     with Post => Is_Heap (H)
+                  and Size (H) = Size (H)'Old
+                  and Model (H) = Model (H)'Old;
+   --  Restore the interval-heap invariant after Keys (1 .. Last) have been
+   --  filled in arbitrary order. This is the linear bottom-up construction
+   --  used by Meld, exposed so adaptive proved queues can defer ordering
+   --  without duplicating the heapification algorithm or its proof.
+
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H) and then Is_Heap (H),
           Post => Is_Heap (H)

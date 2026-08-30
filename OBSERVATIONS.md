@@ -224,6 +224,40 @@ unattainable envelope that uses binary for the six min-only rows and interval
 for the three double-ended rows. Against interval alone, which offers the same
 API, its nine-scenario geometric mean is 50% lower.
 
+### Open proved
+
+The proved open entry takes the proof-friendly half of the same idea. It stages
+the initial insertion wave in an unsorted array. The first removal is a proved
+linear scan, after which the remaining keys are bulk-built into an interval
+heap in linear time; all later operations use that heap directly. Two lazy
+heaps meld by concatenating their arrays. If either side is active, both are
+materialized and the interval heaps are rebuilt together.
+
+Results at `n = 1_000_000` from the run that introduced it:
+
+| scenario | interval | open-buffered | open-proved |
+|----------|---------:|--------------:|------------:|
+| `fill` | 18.57 | 3.57 | 2.38 |
+| `drain` | 108.96 | 126.36 | 124.96 |
+| `churn` | 66.52 | 69.30 | 74.86 |
+| `replace-forward` | 35.43 | 54.57 | 43.09 |
+| `insert-asc` | 47.79 | 2.44 | 1.98 |
+| `insert-desc` | 39.57 | 3.02 | 2.05 |
+| `drain-max` | 122.45 | 137.13 | 136.71 |
+| `drain-both` | 119.30 | 135.50 | 134.49 |
+| `trim` | 76.26 | 73.38 | 83.93 |
+
+The lazy representation is the fastest of the three on every insertion-only
+workload. A pure drain pays both the initial scan and the build, but ends close
+to the unproved entry at the largest size. Once active it has no pending heap:
+that helps `replace-forward`, where the buffered entry eventually flushes its
+batch, and hurts `churn` and `trim`, where keeping new keys out of the large
+base is useful. At `n = 1_000` the one-time scan and build dominate much more
+strongly; this policy is aimed at long-lived or large queues, not tiny drains.
+
+The entry has the same platinum multiset contracts as the canonical heaps.
+The complete level-4 run discharges all 4 635 checks.
+
 ## Leftist heap
 
 The leftist heap is the first structure here whose tree is a pool of linked
@@ -892,7 +926,7 @@ size. This checks that they process the same key stream and return the same
 results while taking different internal paths.
 
 The meld scenarios are checksummed the same way, over a drain of the melded
-accumulator outside the timed phase, and all fifteen entries agree at every
+accumulator outside the timed phase, and all sixteen entries agree at every
 size. Between them these melds are a bottom-up rebuild at four different
 arities, a bottom-up build over distinguished ancestors, a two-level
 trickle-down, a paired double-ended build, a block copy, three runs of single
