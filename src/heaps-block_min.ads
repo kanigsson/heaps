@@ -9,10 +9,7 @@
 --  scans the directory, then scans only the winning block; removing the key
 --  can require rebuilding two block entries. With block size B and n keys,
 --  insertion is O(1), while peek and extraction are O(n / B) and
---  O(n / B + B), respectively. The fixed B = 256 is a practical compromise
---  for the capacities exercised by this collection.
---
---  Verification level: silver, gold and platinum -- see README.md.
+--  O(n / B + B), respectively. B is fixed at 256.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,

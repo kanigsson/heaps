@@ -2,11 +2,9 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -86,11 +84,10 @@ package body Heaps.Min_Max with SPARK_Mode is
    -- Steps of a sift        --
    ----------------------------
 
-   --  The three lemmas below are the heart of the unit: each of them takes
-   --  the state before one elementary rearrangement and the state after it,
-   --  and says which weakened heap property comes out. They are stated on two
-   --  heap values rather than on an in-out parameter so that the case
-   --  analysis has both states in hand at once.
+   --  Each lemma below takes the state before one elementary rearrangement
+   --  and the state after it and says which weakened heap property comes out.
+   --  They are stated on two heap values rather than on an in-out parameter
+   --  so that the case analysis has both states in hand at once.
 
    procedure Lemma_Step_Up (Before, After : Heap; I : Index)
      with Ghost,
@@ -624,11 +621,11 @@ package body Heaps.Min_Max with SPARK_Mode is
       --  The model of the concatenation, which the rebuild has to preserve
 
       Prev : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Heaps.Unsorted.Meld
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
    begin
-      --  Append the keys of From. This is the same argument as the unsorted
-      --  array's meld: the prefix does not move and each copied key joins the
-      --  sum in turn.
+      --  Append the keys of From: the prefix does not move and each copied
+      --  key joins the sum in turn.
 
       for I in 1 .. From.Last loop
          Prev := Into.Keys;

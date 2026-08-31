@@ -77,7 +77,7 @@ package body Heaps.Skew with SPARK_Mode is
                   --  The subtree sizes have to fit in their type through the
                   --  recursion. Carrying the bound in the contract rather than
                   --  deriving it from the invariant is what keeps it pure
-                  --  arithmetic, as PROOF.md records for the same reason.
+                  --  arithmetic.
 
                   and then Size_Now (A) + Size_Now (B) <= Capacity
                   and then (if A /= 0
@@ -139,15 +139,11 @@ package body Heaps.Skew with SPARK_Mode is
    --  Merge the two trees rooted at A and B into one and return its root.
    --  Everything the operations do to the shape of the arena happens here.
    --
-   --  The variant is the total size of the two operands, exactly as in the
-   --  leftist arena, and it is the one thing about this recursion that the
-   --  missing rank field does not change. What it does change is how deep the
-   --  recursion can go: the leftist condition bounds the right spine at
-   --  log n nodes, and without it a single merge can descend as far as there
-   --  are keys. Termination is proved either way; the depth is a property of
-   --  the running program, and it is the reason a skew arena wants either a
-   --  generous stack or an iterative merge before it is used at the sizes the
-   --  leftist one is comfortable at.
+   --  The variant is the total size of the two operands. With no rank field
+   --  bounding the right spine, a single merge can descend as far as there
+   --  are keys: termination is proved either way, but the recursion depth is
+   --  a property of the running program, so large arenas want a generous
+   --  stack or an iterative merge.
 
    --------------
    -- Allocate --
@@ -248,12 +244,9 @@ package body Heaps.Skew with SPARK_Mode is
       Chain_At  := [for J in 1 .. Capacity => J];
       Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
 
-      --  Links is real, and there the same form is not free: an array
-      --  aggregate is built as a whole-array temporary before being assigned,
-      --  and at the sizes this arena exists for that temporary overflows an
-      --  ordinary stack. So this one array is written slot by slot. It costs
-      --  an invariant, but only over the one array whose elements differ from
-      --  each other, and the three goals above stay in their cheap form.
+      --  Links is real, and there the same form is not free: the aggregate
+      --  is built as a whole-array temporary, which overflows an ordinary
+      --  stack at these sizes. So it is written slot by slot.
 
       for I in 1 .. Capacity loop
          Links (I) :=
@@ -385,18 +378,12 @@ package body Heaps.Skew with SPARK_Mode is
       Links (Sub_R).Parent := Top;
       Links (Top).Right := Sub_R;
 
-      --  Exchange the two subtrees, always. This is the whole of the skew
-      --  heap: the leftist arena compares the two ranks here and swaps only
-      --  when the merged side has become the deeper one, which is what keeps
-      --  its right spine short and what the rank field is stored for. Swapping
-      --  unconditionally keeps no such promise about any single tree and needs
-      --  nothing to decide, and the sequence of operations still averages out
-      --  logarithmic because a right spine that a merge lengthens is a right
-      --  spine that the same merge has just moved out of the way.
-      --
-      --  For the proof the difference is that this is straight-line code: the
-      --  two branches the leftist version has to reason about here, and the
-      --  rank equality each of them has to re-establish, are simply not there.
+      --  Exchange the two subtrees, always. Nothing is compared and no
+      --  promise is kept about any single tree; a sequence of operations
+      --  still averages out logarithmic, because a right spine that a merge
+      --  lengthens is one the same merge has just moved out of the way. For
+      --  the proof it means straight-line code with no branch to reason
+      --  about here.
 
       Swap := Links (Top).Left;
       Links (Top).Left := Links (Top).Right;

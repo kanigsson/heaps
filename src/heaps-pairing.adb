@@ -42,9 +42,9 @@ package body Heaps.Pairing with SPARK_Mode is
                                     and then Links (X) = Snap'Old.Links (X)
                                     and then Sub (X) = Snap'Old.Sub (X)));
    --  Take the head of the free chain and hand it back as a one-node tree
-   --  holding K. The key goes in here rather than in the caller because a node
-   --  in use is required to carry a cached model that matches its key, so an
-   --  allocation that left the key unset would leave the arena invalid.
+   --  holding K. The key is set here because a node in use must carry a
+   --  cached model matching it, so leaving it unset would leave the arena
+   --  invalid.
 
    procedure Deallocate (I : Slot)
      with Pre  => Valid
@@ -74,10 +74,9 @@ package body Heaps.Pairing with SPARK_Mode is
    procedure Merge (A, B : Tree; R : out Tree)
      with Pre  => Valid
 
-                  --  The sizes have to fit in their type. Carrying the bound
-                  --  in the contract rather than deriving it from the
-                  --  invariant is what keeps it pure arithmetic, as PROOF.md
-                  --  records for the same reason.
+                  --  The sizes have to fit in their type. Carrying the
+                  --  bound in the contract rather than deriving it from the
+                  --  invariant keeps it pure arithmetic.
 
                   and then Size_Now (A) + Size_Now (B) <= Capacity
                   and then Is_Root (Snap, A)
@@ -97,10 +96,9 @@ package body Heaps.Pairing with SPARK_Mode is
                                           = Size_Of_Node (Snap'Old, A)
                                             + Size_Of_Node (Snap'Old, B))
 
-                  --  The model of the result is the sum of the two operands'.
-                  --  Because the model is cached, this is an equality between
-                  --  three array elements rather than a statement about which
-                  --  nodes belong to which tree.
+                  --  The model of the result is the sum of the two
+                  --  operands', which with a cached model is an equality
+                  --  between three array elements.
 
                   and then Sub_Now (R)
                            = Sub_Of (Snap'Old, A) + Sub_Of (Snap'Old, B)
@@ -114,10 +112,8 @@ package body Heaps.Pairing with SPARK_Mode is
                                     and then X /= A
                                     and then X /= B))
 
-                  --  And the other trees of the arena come back untouched,
-                  --  their cached models included. This is the clause that a
-                  --  recursive model could not state without a reachability
-                  --  relation.
+                  --  The other trees come back untouched, cached models
+                  --  included.
 
                   and then (for all X in 1 .. Capacity =>
                               (if Is_Root (Snap'Old, X)
@@ -125,11 +121,9 @@ package body Heaps.Pairing with SPARK_Mode is
                                   and then X /= B
                                then Links (X) = Snap'Old.Links (X)
                                     and then Sub (X) = Snap'Old.Sub (X)));
-   --  Link one tree under the other and return the root of the result. This
-   --  is the entire structural repertoire of the insert and meld sides of a
-   --  pairing heap, and unlike the two spine-walking arenas it neither
-   --  recurses nor loops: the loser becomes the winner's first child, which
-   --  is one comparison and four assignments whatever the two operands hold.
+   --  Link one tree under the other and return the root of the result: the
+   --  loser becomes the winner's first child, one comparison and four
+   --  assignments whatever the two operands hold.
 
    procedure Fuse
      (A : Slot; Prev : Tree; B : Slot; Rest : Tree; P : out Slot)
@@ -148,12 +142,9 @@ package body Heaps.Pairing with SPARK_Mode is
                   and then (P = A or else P = B)
 
                   --  The result stands exactly where A stood: same
-                  --  predecessor, same successor, same size, and -- the
-                  --  clause the whole fold rests on -- the same cached
-                  --  multiset. Fusing two neighbours of a child list is
-                  --  invisible from anywhere above them, so nothing up the
-                  --  list has to be repaired and the node the list hangs
-                  --  from still caches exactly what it cached before.
+                  --  predecessor, successor, size and cached multiset. A
+                  --  fusion is invisible from above, so nothing up the list
+                  --  has to be repaired.
 
                   and then Links (P).Parent = Prev
                   and then Links (P).Sibling = Rest
@@ -194,22 +185,15 @@ package body Heaps.Pairing with SPARK_Mode is
                                   and then Snap'Old.Links (X).Parent /= B
                                then Links (X) = Snap'Old.Links (X)
                                     and then Sub (X) = Snap'Old.Sub (X)));
-   --  A is asked to have a predecessor, which every node of a child list has:
-   --  the node the list hangs from, if A heads it, and the node before it
-   --  otherwise. Saying so is worth a clause of its own, because it is what
-   --  keeps the four nodes a fusion touches distinct from one another -- a
-   --  predecessor holds at least one node more than A does, and with the
-   --  sizes of the other three that rules out every way they could name each
-   --  other in a cycle.
-   --
    --  Merge a node of a child list with the one after it and put the winner
-   --  back in its place. This is the whole of the fold's structural work, and
-   --  it is written as one operation rather than as a detachment and a Merge
-   --  because a list element has a predecessor whose cached model covers it:
-   --  cutting it out would leave that predecessor stale, and every node above
-   --  it too, which is the walk up the list that a cached model exists to
-   --  avoid. Nothing observes the arena between the two halves of a fusion,
-   --  so the invariant is broken and restored inside one operation instead.
+   --  back in its place. It is one operation rather than a detachment and a
+   --  Merge because cutting a list element out would leave its predecessor's
+   --  cached model stale, and every node above it too.
+   --
+   --  A is asked to have a predecessor -- the node the list hangs from if A
+   --  heads it, the node before it otherwise -- which is what keeps the four
+   --  nodes a fusion touches distinct: a predecessor holds at least one node
+   --  more than A does, which rules out a cycle.
 
    procedure Fold_Children (Root : Slot)
      with Pre  => Valid
@@ -223,12 +207,9 @@ package body Heaps.Pairing with SPARK_Mode is
                   and then Free_Count = Snap'Old.Free_Count
                   and then In_Use (Snap, Root)
 
-                  --  One child left, and everything the node itself claims is
-                  --  what it claimed before. The model of the fold is this
-                  --  and nothing more: because no fusion is visible from
-                  --  above, the keys of the list are still the keys of the
-                  --  list, and the caller reads them off Root exactly as it
-                  --  did before the call.
+                  --  One child left, and everything the node claims is what
+                  --  it claimed before: no fusion is visible from above, so
+                  --  the caller reads the keys off Root as it did before.
 
                   and then Links (Root).Child /= 0
                   and then Links (Links (Root).Child).Sibling = 0
@@ -241,34 +222,25 @@ package body Heaps.Pairing with SPARK_Mode is
                               (if Is_Root (Snap'Old, X) and then X /= Root
                                then Links (X) = Snap'Old.Links (X)
                                     and then Sub (X) = Snap'Old.Sub (X)));
-   --  Fold the children of a node into one, and the whole cost of a pairing
-   --  heap. The node is asked to be a tree of the arena rather than any node
-   --  with children, which is all an extraction ever has and which is worth a
-   --  good deal here: a node with no parent and no sibling is a node no list
-   --  element can be, so every node the fold walks over is distinct from it
-   --  for free. Two passes, and which two is the whole algorithm. The first walks
-   --  the list from the front fusing disjoint neighbouring pairs, which halves
+   --  Fold the children of a node into one. Two passes: the first walks the
+   --  list from the front fusing disjoint neighbouring pairs, which halves
    --  it; the second walks back from the end fusing the last two over and
-   --  over, which folds the halved list right to left. Doing the second pass
-   --  from the front instead -- one accumulator, one fusion per element -- is
-   --  a shorter program and the classic way to lose the amortized bound,
-   --  because the accumulator ends up as one long list of children that the
-   --  next extraction has to walk again.
+   --  over. Folding from the front instead, one accumulator and one fusion
+   --  per element, loses the amortized bound, because the accumulator ends up
+   --  as one long child list for the next extraction to walk.
    --
-   --  The node the list hangs from stays where it is throughout, and that is
-   --  what the operation is written around. An extraction could detach its
-   --  root's children first and fold a free-standing list, and the first
-   --  version of this unit did; leaving the root in place instead makes the
-   --  model of the fold trivial, because Fuse preserves everything above the
-   --  pair it fuses and the root is above all of them. Neither pass carries a
+   --  The node the list hangs from stays in place throughout, which makes the
+   --  model of the fold trivial: Fuse preserves everything above the pair it
+   --  fuses, and the root is above all of them, so neither pass carries a
    --  multiset of its own.
    --
-   --  Both passes were one recursion before they were two loops, and provably
-   --  so -- the variant was the size of the remaining list. What that version
-   --  was not is usable: a root that has taken n insertions has n children, so
-   --  the recursion was n / 2 deep and a million keys overflowed the stack
-   --  long before anything else went wrong. That is a property of pairing
-   --  heaps and not of this arena, and it is why the fold is iterative.
+   --  The passes are loops rather than recursion because a root that has
+   --  taken n insertions has n children, and a recursion n / 2 deep
+   --  overflows the stack at the sizes this arena is for.
+   --
+   --  The node is asked to be a tree rather than any node with children: a
+   --  node with no parent and no sibling is one no list element can be, so
+   --  every node the fold walks over is distinct from it for free.
 
    --------------
    -- Allocate --
@@ -358,21 +330,18 @@ package body Heaps.Pairing with SPARK_Mode is
       --  Thread every slot onto the free chain, the last slot at the head, so
       --  that a slot's position along the chain is its own index.
       --
-      --  The ghost arrays are written as aggregates rather than in a loop. An
-      --  iterated component association defines every element directly, so
-      --  there is nothing for a loop invariant to carry out; the loop version
-      --  rested its postcondition on carrying one, which was a single large
-      --  goal that sat on the prover's time limit. These three arrays are
-      --  erased at run time, so the form costs nothing there.
+      --  The ghost arrays are aggregates rather than loops: an iterated
+      --  component association defines every element directly, leaving
+      --  nothing for a loop invariant to carry. They are erased at run time,
+      --  so the form costs nothing there.
 
       Chain_Pos := [for J in 1 .. Capacity => J];
       Chain_At  := [for J in 1 .. Capacity => J];
       Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
 
-      --  Links is real, and there the same form is not free: an array
-      --  aggregate is built as a whole-array temporary before being assigned,
-      --  and at the sizes this arena exists for that temporary overflows an
-      --  ordinary stack. So this one array is written slot by slot.
+      --  Links is real, and there the same form is not free: the aggregate
+      --  is built as a whole-array temporary, which overflows an ordinary
+      --  stack at these sizes. So it is written slot by slot.
 
       for I in 1 .. Capacity loop
          Links (I) :=
@@ -511,13 +480,11 @@ package body Heaps.Pairing with SPARK_Mode is
 
       R := Top;
 
-      --  Re-establishing the invariant, one node at a time. Only three nodes
-      --  changed and only one of them changed in a way the ordering clause
-      --  can see: the winner acquired a child, and what it has to dominate is
-      --  now the loser's whole cache rather than the old child's. Its three
-      --  parts are the loser's own key, which lost the comparison above; what
-      --  hung below the loser, which the loser already dominated; and the old
-      --  child's cache, which the winner already dominated.
+      --  Re-establishing the invariant, one node at a time. Only the winner
+      --  changed in a way the ordering clause can see: what it dominates is
+      --  now the loser's whole cache, whose parts are the loser's key, which
+      --  lost the comparison; what hung below the loser, which the loser
+      --  dominated; and the old child's cache, which the winner dominated.
 
       pragma Assert
         (for all E of Sub_Now (Links (Loser).Child) => Keys (Loser) <= E);
@@ -528,10 +495,8 @@ package body Heaps.Pairing with SPARK_Mode is
       pragma Assert (Node_In_Use (Snap, Top));
       pragma Assert (if Kid /= 0 then Node_In_Use (Snap, Kid));
 
-      --  Everything else is untouched, and nothing untouched named the loser
-      --  or the old child in a way that has changed: the loser was a tree of
-      --  the arena, so nothing pointed at it at all, and the only node that
-      --  named the old child was the winner.
+      --  Nothing untouched named either moved node: the loser was a tree, so
+      --  nothing pointed at it, and only the winner named the old child.
 
       pragma Assert
         (for all X in 1 .. Capacity =>
@@ -545,10 +510,9 @@ package body Heaps.Pairing with SPARK_Mode is
       pragma Assert (Nodes_Sound (Snap));
 
       --  The model of the result. The winner's new cache is its key over the
-      --  loser's new cache, which is the loser's key over what hung below
-      --  each of the two; the sum of the two old caches is the same two keys
-      --  over the same two multisets in the other order. What follows is the
-      --  reassociation, one law per step.
+      --  loser's, which is the loser's key over what hung below each; the sum
+      --  of the two old caches is the same keys and multisets in another
+      --  order. What follows is that reassociation, one law per step.
 
       Models.Lemma_Sum_Empty (Sub_Now (Loser));
 
@@ -840,11 +804,9 @@ package body Heaps.Pairing with SPARK_Mode is
       pragma Assert (Sub (P) = Before.Sub (A));
 
       --  And now the invariant, node by node. Only one clause is more than
-      --  reading back an assignment: what the winner has to dominate is the
-      --  loser's whole cache, whose three parts are the loser's own key, which
-      --  lost the comparison; what hung below the loser, which the loser
-      --  already dominated; and the winner's old child's cache, which the
-      --  winner already dominated.
+      --  reading back an assignment: what the winner dominates is the loser's
+      --  whole cache, whose parts are the loser's key, which lost the
+      --  comparison; what hung below the loser; and the old child's cache.
 
       pragma Assert (for all E of Below_Loser => Keys (Loser) <= E);
       pragma Assert (for all E of Below_Top => Keys (Top) <= E);
@@ -879,13 +841,11 @@ package body Heaps.Pairing with SPARK_Mode is
 
       Depth : Chain_Array (1 .. Capacity) := [others => 0] with Ghost;
       --  How far along the list a node stands, counting the first child as
-      --  one, and 0 for every node not on the list the first pass has already
-      --  built. It plays for a child list exactly the part Chain_Pos plays for
-      --  the free chain: a value that decreases by one from a node to its
-      --  predecessor is what lets the second pass walk back up the list
-      --  without a reachability relation, and it is what says the walk ends at
-      --  Root rather than wandering into another tree. It is ghost, so the
-      --  pass that maintains it costs nothing at run time.
+      --  one, and 0 for a node not on the list the first pass has built. A
+      --  value decreasing by one from a node to its predecessor is what lets
+      --  the second pass walk back up without a reachability relation, and
+      --  what says the walk ends at Root. Ghost, so it costs nothing at run
+      --  time.
 
       Total : constant Extended_Index := Size_Now (Links (Root).Child)
         with Ghost;

@@ -18,19 +18,11 @@
 --  makes that case disappear from the rest of the unit: it maps a node and a
 --  side to the slot holding that end, and for a lone key it maps both sides
 --  to the same slot.
---
---  Compared with a min-max heap, which alternates the role of whole levels,
---  an interval heap keeps the two roles side by side in every node. A sift
---  then walks the tree one level at a time instead of two, and compares
---  against children rather than against children and grandchildren.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -161,8 +153,7 @@ package Heaps.Interval with SPARK_Mode is
    function Model (H : Heap) return Key_Multisets.Multiset is
      (Models.Occurrences (H.Keys, H.Last))
      with Ghost;
-   --  The heap seen as what it really is: a bag of keys, shared with every
-   --  other heap kind in the collection.
+   --  The heap seen as a bag of keys.
 
    ----------------
    -- Operations --

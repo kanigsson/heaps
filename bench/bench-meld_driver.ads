@@ -4,23 +4,14 @@
 
 --  Generic benchmark driver for the meld operation.
 --
---  A single meld is far too fast to time: building its two operands costs
---  orders of magnitude more than the operation itself, and the clock's
---  resolution swamps the result. The workload here is therefore k-way
---  accumulation -- build Operands heaps and meld them one after another into
---  a single accumulator -- which makes the timed phase long enough to measure,
---  and sweeps the ratio between the two operand sizes for free as the
---  accumulator grows from N / Operands to N.
+--  A single meld is far too fast to time against the cost of building its
+--  operands, so the workload is k-way accumulation: build Operands heaps and
+--  meld them one after another into a single accumulator. That makes the
+--  timed phase long enough to measure and sweeps the ratio between the
+--  operand sizes as the accumulator grows from N / Operands to N.
 --
---  It is also a real workload rather than a microbenchmark: it is the merge
---  phase of an external sort, and the shape of a k-way join over sorted
---  streams.
---
---  For a mergeable heap the k melds cost O(k log n) altogether. For a
---  materialized implicit heap that has to rebuild, they cost
---  O(k * n / Operands * k), which is the gap the column exists to show. A
---  lazy implementation may defer that materialization until the checksum
---  drain; this benchmark deliberately times the Meld operation itself.
+--  A lazy implementation may defer materialization until the checksum drain;
+--  what is timed here is the Meld operation itself.
 
 generic
    Heap_Name : String;

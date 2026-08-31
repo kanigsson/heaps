@@ -2,11 +2,9 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -194,11 +192,10 @@ package body Heaps.Interval with SPARK_Mode is
    -- Steps of a sift --
    ---------------------
 
-   --  The two lemmas below are the heart of the unit: each takes the state
-   --  before one elementary rearrangement and the state after it, and says
-   --  which weakened property comes out. They are stated on two heap values
-   --  rather than on an in-out parameter so that the case analysis has both
-   --  states in hand at once.
+   --  Each lemma below takes the state before one elementary rearrangement
+   --  and the state after it and says which weakened property comes out. They
+   --  are stated on two heap values rather than on an in-out parameter so
+   --  that the case analysis has both states in hand at once.
 
    procedure Lemma_Step_Up
      (Before, After : Heap; Min_Side : Boolean; I : Index)
@@ -290,12 +287,11 @@ package body Heaps.Interval with SPARK_Mode is
    --  Exchanging one end of a node with the corresponding end of its best
    --  child. The key that comes down may fall outside the child's interval,
    --  in which case it takes the other end of that node and the end it
-   --  displaces becomes the key that carries on downwards. What the three
-   --  ordering constraints above say is what all the outcomes -- including a
-   --  child holding a lone key, whose two ends are one slot -- have in
-   --  common: the end of the child that the sift carries on with is no better
-   --  than the one it replaces, and the other end of the child stayed between
-   --  where it was and the end of the parent that did not move.
+   --  displaces carries on downwards. The three ordering constraints above
+   --  are what every outcome has in common, a child holding a lone key
+   --  included: the end the sift carries on with is no better than the one it
+   --  replaces, and the other end of the child stayed between where it was
+   --  and the end of the parent that did not move.
 
    -----------------------
    -- Settling of a sift --
@@ -779,11 +775,11 @@ package body Heaps.Interval with SPARK_Mode is
       Cap    : constant Extended_Index := Into.Capacity;
 
       Prev : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Heaps.Unsorted.Meld
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
    begin
-      --  Append the keys of From. This is the same argument as the unsorted
-      --  array's meld: the prefix does not move and each copied key joins the
-      --  sum in turn.
+      --  Append the keys of From: the prefix does not move and each copied
+      --  key joins the sum in turn.
 
       for I in 1 .. From.Last loop
          Prev := Into.Keys;

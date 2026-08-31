@@ -10,23 +10,17 @@
 --  (I + Arity - 2) / Arity. For Arity = 2 those are the familiar 2 * I,
 --  2 * I + 1 and I / 2.
 --
---  The trade is depth against fan-out. The tree is log Arity times shallower,
---  so sift-up -- which only compares a node with its parent -- does that many
---  fewer comparisons and moves, while sift-down has to find the smallest of
---  Arity children at every level and ends up doing more comparisons overall,
---  although on a smaller, more cache-friendly working set. Which side wins is
---  exactly what the benchmark is for.
+--  The trade is depth against fan-out. The tree is log Arity times
+--  shallower, so sift-up, which only compares a node with its parent, does
+--  that many fewer comparisons and moves, while sift-down has to find the
+--  smallest of Arity children at every level.
 --
 --  The arity is a discriminant rather than a generic parameter, so a single
 --  proof covers every arity at once.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,

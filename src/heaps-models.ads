@@ -13,11 +13,9 @@
 --  equal, and an operation that inserts or removes a key is described by an
 --  Add on the model.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -56,11 +54,9 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
    --  The multiset of the keys held in A (Fst .. Lst).
    --
    --  Occurrences models a prefix, which is all a heap whose keys occupy
-   --  1 .. Last ever needs. A merge of two sorted runs is the one operation
-   --  in the collection that leaves a hole in the middle of the array -- the
-   --  part of the original run already consumed and not yet overwritten --
-   --  and describing the two live regions on either side of it is what this
-   --  is for.
+   --  1 .. Last needs. A merge of two sorted runs leaves a hole in the middle
+   --  of the array -- the part of the original run consumed and not yet
+   --  overwritten -- and this describes the live regions either side of it.
 
    ---------------------------------
    -- Elementary multiset lemmas  --
@@ -181,9 +177,8 @@ package Heaps.Models with SPARK_Mode, Ghost, Always_Terminates is
                   = KM.Sum (Occurrences (A, Mid),
                             Occurrences_In (A, Mid + 1, Lst)),
           Subprogram_Variant => (Decreases => Lst);
-   --  A prefix splits into a shorter prefix and the range above it. This is
-   --  what turns the two live regions a merge leaves in the array back into
-   --  the plain prefix model the rest of the collection speaks.
+   --  A prefix splits into a shorter prefix and the range above it, which
+   --  turns the two live regions a merge leaves back into a prefix model.
 
    procedure Lemma_Swap
      (A, R : Key_Array; I, J : Index; Lst : Extended_Index)

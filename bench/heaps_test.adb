@@ -807,27 +807,21 @@ procedure Heaps_Test is
       end loop;
    end Sort;
 
-   --  The arenas: several trees sharing one pool. There are three of them
-   --  now -- the leftist, the skew and the pairing -- and they differ in
-   --  nothing this suite can see: same interface, same contracts, same claims
-   --  about the free chain and about the trees an operation does not name --
-   --  so the tests below are written once as a generic and run once per
-   --  arena. A pool is package state rather than an object, so every test
-   --  calls Clear first; that, and nothing else, is what keeps them
-   --  independent of one another.
+   --  The arenas: several trees sharing one pool. They present the same
+   --  interface and the same contracts, so the tests below are written once
+   --  as a generic and run once per arena. A pool is package state rather
+   --  than an object, so every test calls Clear first, which is what keeps
+   --  them independent.
    --
-   --  Two properties here have no analogue in the array heaps and so are
-   --  checked nowhere else in this program. Room is the arena's own
-   --  bookkeeping: nodes come off a free chain and go back onto it, and a leak
-   --  or a double release drifts the count long before it produces a wrong
-   --  answer. And the trees an operation does not name have to come back
-   --  untouched, which is the frame the arena's contracts claim and the reason
-   --  a meld can be a splice rather than a copy; checking it needs a bystander
-   --  tree, which a heap owning its own pool cannot have.
+   --  Two properties checked here have no analogue in the array heaps. Room
+   --  is the arena's own bookkeeping: a leak or a double release drifts the
+   --  count long before it produces a wrong answer. And the trees an
+   --  operation does not name have to come back untouched, which needs a
+   --  bystander tree to check.
    --
-   --  The arena has no Min_Of either. With several trees in one array there is
-   --  no range of slots holding a given tree's keys, so the oracle for "the
-   --  smallest key still in T" has to be kept by the test.
+   --  There is no Min_Of either: with several trees in one array there is no
+   --  range of slots holding a given tree's keys, so the oracle for "the
+   --  smallest key still in T" is kept by the test.
 
    generic
       Kind : String;
@@ -1033,9 +1027,7 @@ procedure Heaps_Test is
                 Kind & " arena meld: the three trees share the one pool");
 
          --  A meld allocates, frees and copies nothing: it is a splice, and
-         --  the free count is the run-time witness of that. This is the
-         --  property
-         --  that separates it from the append-and-rebuild melds above.
+         --  the free count is the run-time witness of that.
 
          Before := Room;
          Meld (Into, From);
@@ -1076,10 +1068,8 @@ procedure Heaps_Test is
       end Test_Arena_Meld;
 
       procedure Test_Arena_KWay (N, Ways : Positive) is
-         --  What the arena is for: k trees in one pool folded into one
-         --  accumulator, each meld a splice of two right spines. A heap that
-         --  owns its pool cannot express this without copying k - 1 of the
-         --  operands into the survivor.
+         --  k trees in one pool folded into one accumulator, each meld a
+         --  splice of two right spines.
          Each  : constant Positive := Positive'Max (1, N / Ways);
          Total : constant Natural := Each * Ways;
 
@@ -1140,10 +1130,9 @@ procedure Heaps_Test is
 
    end Arena_Suite;
 
-   --  One instance per arena. The formal subprograms match the arenas' own
-   --  directly: a tree is a subtype of Extended_Index in both, and a generic
-   --  formal subprogram asks only for mode conformance, so no wrapper stands
-   --  between the suite and the operations it drives.
+   --  One instance per arena. A tree is a subtype of Extended_Index and a
+   --  generic formal subprogram asks only for mode conformance, so the
+   --  arenas' operations match the formals directly.
 
    package Leftist_Suite is new Arena_Suite
      (Kind        => "leftist",
@@ -1201,13 +1190,9 @@ begin
       Test_Weak_Churn (N);
    end loop;
 
-   --  The arena churns for a different reason, and over fewer sizes. What the
-   --  sweep above is after is the layer and level boundaries of an implicit
-   --  tree, which the arena does not have; what matters here is that slots go
-   --  back onto the free chain and come off it again, and a handful of sizes
-   --  exercise that as well as two hundred would -- while sparing the suite
-   --  two hundred clears of a pool whose size has nothing to do with the size
-   --  being tested.
+   --  The arena churns over fewer sizes: it has no layer or level boundaries
+   --  to sweep, and what matters is only that slots go back onto the free
+   --  chain and come off it again.
    for N of Churn_Sizes loop
       Leftist_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
@@ -1247,10 +1232,9 @@ begin
    end loop;
    Test_Meld (0, 0, 2);
 
-   --  The arena's own meld, over the same shapes. It gets a k-way fold as
-   --  well: with one pool holding every operand, folding k trees into one is
-   --  the workload the structure exists for, and it is the case a heap that
-   --  owns its pool cannot run without copying.
+   --  The arena's own meld, over the same shapes, plus a k-way fold: with
+   --  one pool holding every operand, folding k trees into one is the
+   --  workload the structure exists for.
    for N of Sizes loop
       Leftist_Suite.Test_Arena_Meld (N, N);
       Leftist_Suite.Test_Arena_Meld (N, 1);

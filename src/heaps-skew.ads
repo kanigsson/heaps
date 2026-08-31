@@ -4,54 +4,36 @@
 
 --  Skew heaps sharing one arena.
 --
---  A skew heap is a leftist heap with the bookkeeping removed. Both merge by
---  walking down the right spines of their two operands and hanging the rest of
---  one onto the other; the leftist heap then decides, at each node on the way
---  back up, whether to exchange that node's two subtrees, and it needs a rank
---  field per node to decide with. The skew heap exchanges them every time and
---  asks nothing. That is one field fewer per node and one invariant clause
---  fewer, and it costs the worst-case bound: a single merge can walk a spine
---  of n nodes, and only the amortized cost of a sequence of operations is
---  logarithmic.
+--  A skew heap merges by walking down the right spines of its two operands
+--  and hanging the rest of one onto the other, exchanging a node's two
+--  subtrees at every step of the way back up. It keeps no rank field and no
+--  shape condition, so a single merge can walk a spine of n nodes and only
+--  the amortized cost of a sequence of operations is logarithmic.
 --
---  Structurally, then, this unit is the same shape as the leftist arena and
---  deliberately so: the pool is package state and a heap is a root inside it,
---  so several heaps share one array and a meld is a splice and nothing else.
---  A tree is named by the index of its root, a root changes whenever the tree
---  is operated on, and so every operation takes its tree as `in out` and the
---  caller keeps the updated name. The reasoning behind that shape, and the
---  measurement that settled it, is written up where the leftist arena's is.
---
---  Removing the rank field does not weaken what can be proved. Nothing in
---  these contracts mentions the shape of the tree -- they speak of a multiset
---  of keys, a size and a set of roots -- so the clauses the leftist condition
---  needs are exactly the clauses that state the property this unit does not
---  claim. What is left is a smaller invariant proving the same postconditions.
+--  The pool is package state and a heap is a root inside it, so several heaps
+--  share one array and a meld is a splice and nothing else. A tree is named
+--  by the index of its root, and a root changes whenever the tree is operated
+--  on, so every operation takes its tree as `in out` and the caller keeps the
+--  updated name.
 
---  The model of a tree is *cached*, one multiset per node, rather than defined
---  by recursion over the tree, for the reason the leftist arena records: a
---  recursive model reads the entire pool, so every mutation owes a proof that
---  the trees not being touched still have the model they had, and stating that
---  means saying which nodes belong to which tree. A cached model is a field of
---  a node, so a tree's model is a field of its root, and a mutation that
---  leaves a root alone leaves its model alone for free.
+--  The model of a tree is cached, one multiset per node, rather than defined
+--  by recursion over the tree, which is what lets the invariant stay flat: a
+--  recursive model reads the whole pool, so every mutation would owe a proof
+--  about the trees it does not touch. A cached model is a field of a node, so
+--  a tree's model is a field of its root, and a mutation that leaves a root
+--  alone leaves its model alone.
 --
 --  The cache is maintained by one clause of Valid about one node and its two
---  immediate children, which is the same shape as the clause that maintains
---  Size, and it is maintained by the same assignments. SPARK has no ghost
---  record components and no ghost parameters of non-ghost subprograms
---  (LRM 6.9(7)), so the cache cannot ride along inside the node or be passed
---  in; ghost package state is the one place it can live, and it is erased at
---  run time like every other ghost object here.
+--  children, the same shape as the clause that maintains Size and by the same
+--  assignments. SPARK has no ghost record components and no ghost parameters
+--  of non-ghost subprograms (LRM 6.9(7)), so the cache lives in ghost package
+--  state and is erased at run time.
 
---  The ghost model of these units -- a functional multiset -- cannot
---  reasonably be evaluated at run time. Since the contracts are discharged by
---  proof, run-time checking of them is redundant, so assertions are disabled
---  here whatever the compilation switches say.
+--  The ghost model cannot reasonably be evaluated at run time, and the
+--  contracts are discharged by proof, so assertions are disabled here.
 
 --  Snap'Old appears inside the implications of the frame clauses, so it is
---  formally "potentially unevaluated". It is a pure function of the arena and
---  always well defined, which is exactly the case this pragma exists for.
+--  formally "potentially unevaluated", the case this pragma exists for.
 
 pragma Unevaluated_Use_Of_Old (Allow);
 
@@ -76,30 +58,25 @@ package Heaps.Skew with SPARK_Mode is
    --  tree, and is a valid value of every operation that takes one.
 
    subtype Slot is Tree range 1 .. Capacity;
-   --  A node of the arena. Naming the range as a subtype rather than asking
-   --  for it in a precondition is deliberate: these predicates appear as
-   --  hypotheses under an implication inside a quantifier, and PROOF.md
-   --  records that an expression function guarded by a precondition does not
-   --  unfold there. A subtype carries the same information with nothing to
-   --  discharge.
+   --  A node of the arena. The range is a subtype rather than a precondition
+   --  because these predicates appear under an implication inside a
+   --  quantifier, where an expression function guarded by a precondition does
+   --  not unfold.
 
    ---------------------------
    -- Structural properties --
    ---------------------------
 
-   --  The arena is package state, so a contract cannot pass "the arena before
-   --  the call" to a ghost function the way a heap held in a record would pass
-   --  H'Old. It needs a name for that state instead, and Snapshot is it: every
-   --  ghost property below reads one, and Snap names the current one. This is
-   --  not decoration -- 'Old may not be applied to an expression mentioning a
-   --  quantified variable, so `Model (U)'Old` inside a `for all U` is illegal
-   --  where `Model (Snap'Old, U)` is fine, and the frame clauses of this unit
-   --  are all of that shape.
+   --  The arena is package state, so a contract needs a name for "the arena
+   --  before the call": every ghost property below reads a Snapshot, and Snap
+   --  is the current one. 'Old may not be applied to an expression mentioning
+   --  a quantified variable, so `Model (U)'Old` inside a `for all U` is
+   --  illegal where `Model (Snap'Old, U)` is fine, and the frame clauses are
+   --  all of that shape.
 
    type Snapshot is private with Ghost;
 
    function Snap return Snapshot with Ghost;
-   --  The arena as it stands
 
    function Valid (S : Snapshot) return Boolean with Ghost;
    --  S is well formed: every node in use is a well formed heap-ordered node
@@ -107,15 +84,14 @@ package Heaps.Skew with SPARK_Mode is
    --  is on the free chain.
 
    function In_Use (S : Snapshot; I : Slot) return Boolean with Ghost;
-   --  I holds a node of some tree
 
    function Is_Root (S : Snapshot; T : Tree) return Boolean with Ghost;
    --  T names a tree: either the empty tree, or a node in use with no parent
 
    function Model (S : Snapshot; T : Tree) return Key_Multisets.Multiset
      with Ghost;
-   --  The multiset of the keys held in T. This is a *lookup*, not a scan or a
-   --  recursion: the answer is the cache of T's root.
+   --  The multiset of the keys held in T: a lookup of the cache of T's root,
+   --  not a scan.
 
    function Size_In (S : Snapshot; T : Tree) return Extended_Index with Ghost;
    --  The number of nodes in T
@@ -126,7 +102,7 @@ package Heaps.Skew with SPARK_Mode is
      with Ghost;
    --  K is a lower bound of every key held in T
 
-   --  Shorthands for the current state, which is what most contracts want
+   --  Shorthands for the current state
 
    function Valid return Boolean is (Valid (Snap)) with Ghost;
    function Is_Root (T : Tree) return Boolean is (Is_Root (Snap, T))
@@ -136,9 +112,8 @@ package Heaps.Skew with SPARK_Mode is
 
    Nodes : constant Extended_Index := Capacity;
    --  How many nodes the arena holds altogether, free and in use. A generic
-   --  formal object is not visible from outside its instance, so a client with
-   --  no other way to name the arena's size cannot compare Room against it
-   --  without this.
+   --  formal object is not visible outside its instance, so a client needs
+   --  this to compare Room against it.
 
    function Room return Extended_Index;
    --  How many more keys the arena can hold, over all its trees together
@@ -156,8 +131,7 @@ package Heaps.Skew with SPARK_Mode is
    procedure Clear
      with Post => Valid and Room = Capacity;
    --  Empty the arena. Every tree in it ceases to exist, so every name the
-   --  caller holds becomes stale; this is the one operation that invalidates
-   --  names it was not given.
+   --  caller holds becomes stale.
 
    function Peek_Min (T : Tree) return Key_Type
      with Pre => Valid and then Is_Root (T) and then T /= 0;
@@ -174,9 +148,8 @@ package Heaps.Skew with SPARK_Mode is
                   and Model (Snap, T)
                       = Key_Multisets.Add (Model (Snap'Old, T'Old), K)
 
-                  --  The other trees of the arena are untouched. With a
-                  --  cached model this is one equality per root rather than a
-                  --  statement about which nodes belong to which tree.
+                  --  The other trees are untouched: with a cached model
+                  --  that is one equality per root.
 
                   and (for all U in Tree =>
                          (if U /= T'Old and then Is_Root (Snap'Old, U)
@@ -200,13 +173,10 @@ package Heaps.Skew with SPARK_Mode is
                           then Is_Root (Snap, U)
                                and then Model (Snap, U) = Model (Snap'Old, U)));
 
-   --  Room < Capacity says the arena is not wholly empty, which T /= 0 makes
-   --  obvious and the flat invariant cannot show. Chain_At and Chain_Pos are
-   --  inverses, so the free nodes are in bijection with 1 .. Room and a node
-   --  in use leaves at most Capacity - 1 of them -- but that is pigeonhole,
-   --  and counting the image of an injection is the argument this invariant
-   --  is built to avoid. It is asked of the caller for the same reason the
-   --  size bound on Meld is.
+   --  Room < Capacity says the arena is not wholly empty. T /= 0 makes that
+   --  obvious, but deriving it needs a counting argument over the free chain
+   --  that the flat invariant is built to avoid, so it is asked of the
+   --  caller.
 
    procedure Meld (T : in out Tree; U : in out Tree)
      with Pre  => Valid
@@ -226,13 +196,11 @@ package Heaps.Skew with SPARK_Mode is
                              and then Is_Root (Snap'Old, W)
                           then Is_Root (Snap, W)
                                and then Model (Snap, W) = Model (Snap'Old, W)));
-   --  The size bound is asked of the caller rather than derived, for the
-   --  reason PROOF.md gives about this arithmetic: that two distinct trees of
-   --  an arena of Capacity nodes hold at most Capacity keys between them is
-   --  true, but it is a counting argument about their nodes being disjoint,
-   --  and the invariant here is deliberately flat -- it relates a node to its
-   --  immediate neighbours and says nothing about which nodes belong to which
-   --  tree. A caller always knows how many keys it put in.
+   --  The size bound is asked of the caller rather than derived: that two
+   --  trees of an arena hold at most Capacity keys between them is a counting
+   --  argument over disjoint nodes, and the invariant here is flat -- it
+   --  relates a node to its immediate neighbours and says nothing about which
+   --  nodes belong to which tree.
    --
    --  Destructive meld, and the point of the unit: T receives every key of U,
    --  which ceases to exist. No node is allocated, freed or copied -- Room is
@@ -273,11 +241,9 @@ private
       Chain_Pos  : Chain_Array (1 .. Capacity);
       Chain_At   : Chain_Array (1 .. Capacity);
    end record;
-   --  A whole arena as one value, for contracts to compare two states. The
-   --  type is ghost, so the real state cannot be an object of it -- SPARK has
-   --  no ghost components, so a non-ghost record could not hold Sub and
-   --  Chain_Pos without making them real. The state is therefore kept as
-   --  separate variables and Snap assembles them.
+   --  A whole arena as one value, for contracts to compare two states. SPARK
+   --  has no ghost components, so the real state is kept as separate
+   --  variables and Snap assembles them.
 
    --  Real state
 
@@ -295,17 +261,14 @@ private
 
    Chain_At : Chain_Array (1 .. Capacity) with Ghost;
    --  The inverse of Chain_Pos: Chain_At (K) is the node at position K. Two
-   --  arrays that are inverses of one another give injectivity in one step,
-   --  where stating it directly needs a quantifier over pairs of nodes -- and
-   --  Valid is the hypothesis of nearly every proof in the unit, so an O(n^2)
-   --  clause in it is paid for everywhere.
+   --  arrays that are inverses give injectivity in one step, where stating it
+   --  directly needs a quantifier over pairs of nodes inside Valid.
 
    Chain_Pos : Chain_Array (1 .. Capacity) with Ghost;
-   --  0 if the node is in use, otherwise its one-based position along the free
-   --  chain counting from the far end, so that the head holds Free_Count. It
-   --  plays for the free chain exactly the part Size plays for a tree: a value
-   --  that strictly decreases from a node to the next rules out a cycle
-   --  locally, with no recursive definition and no induction.
+   --  0 if the node is in use, otherwise its one-based position along the
+   --  free chain counting from the far end, so the head holds Free_Count. As
+   --  Size does for a tree, a value that strictly decreases from a node to
+   --  the next rules out a cycle without recursion or induction.
 
    function Snap return Snapshot is
      ((Keys       => Keys,
@@ -412,11 +375,9 @@ private
       and then (S.Free = 0) = (S.Free_Count = 0)
       and then (if S.Free /= 0 then S.Chain_Pos (S.Free) = S.Free_Count)
 
-      --  Chain_At and Chain_Pos are inverses over the chain, which is what
-      --  makes positions unique: two free nodes at the same position are both
-      --  Chain_At of it, and so are the same node. The head is therefore the
-      --  only node at the far end, and popping it leaves every other position
-      --  in range.
+      --  Chain_At and Chain_Pos are inverses over the chain, so positions
+      --  are unique: two free nodes at the same position are both Chain_At
+      --  of it and so the same node.
 
       and then (for all K in 1 .. Capacity =>
                   (if K <= S.Free_Count
@@ -431,12 +392,10 @@ private
 
    function Valid (S : Snapshot) return Boolean is
      (Chain_Sound (S) and then Nodes_Sound (S));
-   --  Split in two so that establishing it is two moderate goals rather than
-   --  one large one. Neither half carries a precondition: PROOF.md records
-   --  that factoring a predicate into named pieces *with* preconditions made
-   --  a proof dramatically worse, because the defining axiom of a guarded
-   --  expression function does not unfold where the guard cannot be
-   --  rederived. Every bound these need is stated inside them.
+   --  Split in two so that establishing it is two moderate goals rather
+   --  than one large one. Neither half carries a precondition, since a
+   --  guarded expression function does not unfold where the guard cannot be
+   --  rederived; every bound they need is stated inside them.
 
    function Is_Root (S : Snapshot; T : Tree) return Boolean is
      (T = 0 or else (In_Use (S, T) and then S.Links (T).Parent = 0));
@@ -454,7 +413,6 @@ private
    function Is_Minimum (S : Snapshot; T : Tree; K : Key_Type) return Boolean is
      (for all E of Sub_Of (S, T) => K <= E);
    --  Stated on the multiset rather than on the array: with several trees in
-   --  one arena, "every key of T" is a statement about T's model and not
-   --  about a range of slots.
+   --  one arena, "every key of T" is about T's model, not a range of slots.
 
 end Heaps.Skew;

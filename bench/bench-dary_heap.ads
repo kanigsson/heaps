@@ -5,10 +5,8 @@
 --  Benchmark adapter for Heaps.Dary.
 --
 --  The adapter owns the heap object and exposes the operations as
---  parameterless procedures, which is all Bench.Driver asks for. It is
---  generic over the arity because the arity is the whole point of this heap
---  kind: the interesting measurement is one curve per arity on the same key
---  sequence.
+--  parameterless procedures, and is generic over the arity so that each
+--  arity is measured on the same key sequence.
 
 with Bench.Driver;
 with Bench.Meld_Driver;

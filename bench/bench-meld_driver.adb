@@ -67,9 +67,7 @@ package body Bench.Meld_Driver is
       Sum   : Checksum_Type := 0;
       Start : Time;
    begin
-      --  The lopsided case: a large accumulator receives small operands. A
-      --  rebuild pays for the whole accumulator every time, however little
-      --  arrives; a mergeable heap does not.
+      --  The lopsided case: a large accumulator receives small operands.
 
       Reset;
       for I in 1 .. N loop

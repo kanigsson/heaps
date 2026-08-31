@@ -9,14 +9,10 @@
 --  array slice 1 .. Last is therefore always a complete binary tree, and the
 --  only structural property to maintain is that every node is smaller than or
 --  equal to its children.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -64,10 +60,8 @@ package Heaps.Binary with SPARK_Mode is
    function Model (H : Heap) return Key_Multisets.Multiset is
      (Models.Occurrences (H.Keys, H.Last))
      with Ghost;
-   --  The heap seen as what it really is: a bag of keys. The array layout,
-   --  the ordering and the traversal order are implementation detail; the
-   --  contracts below pin down the observable behaviour entirely in terms of
-   --  this multiset.
+   --  The heap seen as a bag of keys, which is what the contracts below pin
+   --  the observable behaviour down in terms of.
 
    ----------------
    -- Operations --
@@ -122,10 +116,8 @@ package Heaps.Binary with SPARK_Mode is
    --  Destructive meld: Into receives every key of From, which is left empty.
    --
    --  An implicit heap cannot splice two trees together, so this appends the
-   --  keys of From and rebuilds the whole array bottom-up. That is O(n + m)
-   --  rather than the O(log n) a mergeable heap achieves, and it is the
-   --  honest comparison to draw: rebuilding by repeated insertion would be
-   --  O(m log n) and would flatter the mergeable structures.
+   --  keys of From and rebuilds the whole array bottom-up, which is O(n + m)
+   --  where repeated insertion would be O(m log n).
    --
    --  Is_Heap (From) is required only for uniformity with the rest of the
    --  family. The rebuild does not depend on it.

@@ -2,11 +2,9 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -307,7 +305,8 @@ package body Heaps.Dary with SPARK_Mode is
       M0    : constant KM.Multiset := Model (H) with Ghost;
 
       Before : Key_Array := H.Keys with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       Hole  : Index := Start;
       First : Index;
@@ -431,7 +430,8 @@ package body Heaps.Dary with SPARK_Mode is
       --  The model of the concatenation, which the rebuild has to preserve
 
       Prev : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Heaps.Unsorted.Meld
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
    begin
       --  Append the keys of From: the prefix does not move, and each copied
       --  key joins the sum in turn.
@@ -523,7 +523,8 @@ package body Heaps.Dary with SPARK_Mode is
       --  the path from the root down
 
       Before : Key_Array := H.Keys with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       Hole  : Index := 1;
       First : Index;

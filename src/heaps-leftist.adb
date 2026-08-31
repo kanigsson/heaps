@@ -78,7 +78,7 @@ package body Heaps.Leftist with SPARK_Mode is
                   --  The subtree sizes have to fit in their type through the
                   --  recursion. Carrying the bound in the contract rather than
                   --  deriving it from the invariant is what keeps it pure
-                  --  arithmetic, as PROOF.md records for the same reason.
+                  --  arithmetic.
 
                   and then Size_Now (A) + Size_Now (B) <= Capacity
                   and then (if A /= 0
@@ -229,24 +229,18 @@ package body Heaps.Leftist with SPARK_Mode is
       --  Thread every slot onto the free chain, the last slot at the head, so
       --  that a slot's position along the chain is its own index.
       --
-      --  The ghost arrays are written as aggregates rather than in a loop. An
-      --  iterated component association defines every element directly, so
-      --  there is nothing for a loop invariant to carry out; the loop version
-      --  rested its postcondition on carrying one, which was a single large
-      --  goal that sat on the prover's time limit and went through or not
-      --  depending on how loaded the run was. These three arrays are erased at
-      --  run time, so the form costs nothing there.
+      --  The ghost arrays are aggregates rather than loops: an iterated
+      --  component association defines every element directly, leaving
+      --  nothing for a loop invariant to carry. They are erased at run
+      --  time, so the form costs nothing there.
 
       Chain_Pos := [for J in 1 .. Capacity => J];
       Chain_At  := [for J in 1 .. Capacity => J];
       Sub       := [for J in 1 .. Capacity => KM.Empty_Multiset];
 
-      --  Links is real, and there the same form is not free: an array
-      --  aggregate is built as a whole-array temporary before being assigned,
-      --  and at the sizes this arena exists for that temporary overflows an
-      --  ordinary stack. So this one array is written slot by slot. It costs
-      --  an invariant, but only over the one array whose elements differ from
-      --  each other, and the three goals above stay in their cheap form.
+      --  Links is real, and there the same form is not free: the aggregate
+      --  is built as a whole-array temporary, which overflows an ordinary
+      --  stack at these sizes. So it is written slot by slot.
 
       for I in 1 .. Capacity loop
          Links (I) :=

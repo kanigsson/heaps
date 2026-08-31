@@ -6,20 +6,12 @@
 --
 --  Keys are simply appended, in whatever order they arrive. There is no
 --  structural invariant at all -- any array is a valid state -- so insertion
---  is a single store and extraction has to scan. It is the O(1) / O(n) corner
---  of the design space, and the baseline the real heaps have to beat.
---
---  It is also the cleanest illustration of what the platinum contracts buy:
---  since the type has no invariant to speak of, the multiset equations below
---  are the *entire* specification of the unit.
---
---  Verification level: silver, gold and platinum -- see README.md.
+--  is a single store and extraction has to scan: the O(1) / O(n) corner of
+--  the design space. With no invariant to speak of, the multiset equations
+--  below are the entire specification of the unit.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every operation into a quadratic one. Since the contracts are
---  discharged by proof, run-time checking of them is redundant, so assertions
---  are disabled here whatever the compilation switches say.
+--  The ghost model cannot reasonably be evaluated at run time, and the
+--  contracts are discharged by proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -87,14 +79,10 @@ package Heaps.Unsorted with SPARK_Mode is
           Post => Size (Into) = Size (Into)'Old + Size (From)'Old
                   and Is_Empty (From)
                   and Model (Into) = Model (Into)'Old + Model (From)'Old;
-   --  Destructive meld: Into receives every key of From, which is left empty.
-   --  For this structure it is the cheapest meld in the collection -- keys are
-   --  unsorted and stay unsorted, so there is nothing to repair and the whole
-   --  operation is a copy of Size (From) keys.
-   --
-   --  Melding is destructive here only for uniformity with the mergeable
-   --  heaps, where an operand cannot survive the operation. An unsorted array
-   --  could leave From alone at no extra cost.
+   --  Destructive meld: Into receives every key of From, which is left
+   --  empty. Keys are unsorted and stay unsorted, so there is nothing to
+   --  repair and the operation is a copy of Size (From) keys. It is
+   --  destructive only for uniformity with the mergeable heaps.
 
    procedure Extract_Min (H : in out Heap; K : out Key_Type)
      with Pre  => not Is_Empty (H),

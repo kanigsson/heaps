@@ -11,14 +11,10 @@
 --  hold the largest key of their subtree. The minimum of the whole heap is
 --  therefore at the root and the maximum is the larger of its two children,
 --  and both can be extracted in logarithmic time.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -106,14 +102,11 @@ package Heaps.Min_Max with SPARK_Mode is
    --  The min-max ordering, stated the way it is used: every min node is a
    --  lower bound and every max node an upper bound of its whole subtree.
    --
-   --  A binary heap can be characterised by a purely local property -- each
-   --  node against its parent -- from which domination of the subtree
-   --  follows by induction. Here the local property (each node against its
-   --  parent and its grandparent) is equivalent too, but it is the wrong
-   --  invariant to carry: a sift step moves a key across two levels, and
-   --  justifying the move needs bounds on the subtree that the local property
-   --  only yields through the very constraint the step is repairing. Stating
-   --  the invariant in its strong form from the start avoids that circle.
+   --  The local property -- each node against its parent and its grandparent
+   --  -- is equivalent, but it is the wrong invariant to carry: a sift step
+   --  moves a key across two levels, and justifying the move needs bounds on
+   --  the subtree that the local property only yields through the constraint
+   --  the step is repairing.
 
    function Is_Minimum (H : Heap; K : Key_Type) return Boolean is
      (for all I in 1 .. H.Last => K <= H.Keys (I))
@@ -132,8 +125,7 @@ package Heaps.Min_Max with SPARK_Mode is
    function Model (H : Heap) return Key_Multisets.Multiset is
      (Models.Occurrences (H.Keys, H.Last))
      with Ghost;
-   --  The heap seen as what it really is: a bag of keys, shared with every
-   --  other heap kind in the collection.
+   --  The heap seen as a bag of keys.
 
    ----------------
    -- Operations --
@@ -214,10 +206,8 @@ package Heaps.Min_Max with SPARK_Mode is
    --  Destructive meld: Into receives every key of From, which is left empty.
    --
    --  An implicit heap cannot splice two trees together, so this appends the
-   --  keys of From and rebuilds the whole array bottom-up, which is O(n + m).
-   --  That is the same bargain the binary heap strikes, and it is the honest
-   --  comparison to draw: rebuilding by repeated insertion would be
-   --  O(m log n) and would flatter the mergeable structures.
+   --  keys of From and rebuilds the whole array bottom-up, which is O(n + m)
+   --  where repeated insertion would be O(m log n).
    --
    --  Is_Heap (From) is required only for uniformity with the rest of the
    --  family. The rebuild does not depend on it.

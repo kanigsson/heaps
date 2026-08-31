@@ -4,12 +4,11 @@
 
 --  Buffered, unrestricted priority queue used by the open benchmark entry.
 --
---  Unlike the canonical heaps in this collection, this package is not
---  currently analyzed or proved with SPARK and makes no promise about one
---  fixed representation. It delays the initial build, keeps small queues in
---  an unsorted array, and batches later insertions around an interval heap.
---  Every policy decision depends only on the current representation and size;
---  none depends on benchmark scenarios, key patterns or future operations.
+--  This package is not analyzed or proved with SPARK and makes no promise
+--  about one fixed representation. It delays the initial build, keeps small
+--  queues in an unsorted array, and batches later insertions around an
+--  interval heap. Every policy decision depends only on the current
+--  representation and size.
 
 with Heaps.Interval;
 

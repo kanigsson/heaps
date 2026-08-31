@@ -8,17 +8,11 @@ package body Bench.Leftist_Heap is
 
    package Arena renames Heaps.Leftist_Pool;
 
-   --  The heaps are not objects here. They are trees of the one arena, named
-   --  by the index of their root, which is what lets a meld be a splice: the
-   --  other adapters need one heap object per operand and a meld has to move
-   --  keys between two arrays.
+   --  The heaps are not objects here: they are trees of the one arena, named
+   --  by the index of their root.
    --
-   --  Heaps.Leftist_Pool is instantiated with 2 ** 20 nodes, which is
-   --  Max_Elements, and no scenario holds more than that many keys across all
-   --  the trees at once -- one tree of Max_Elements for the single-heap
-   --  scenarios, Max_Elements for the accumulator in `meld-into-full` plus one
-   --  key per operand, and Operands * (Max_Elements / Operands) in
-   --  `meld-accumulate`.
+   --  The pool holds 2 ** 20 nodes, which is Max_Elements, and no scenario
+   --  holds more than that many keys across all its trees at once.
 
    T : Arena.Tree := 0;
    --  The tree the single-heap scenarios drive.

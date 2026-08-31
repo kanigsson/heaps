@@ -4,11 +4,9 @@
 
 --  Benchmark driver for double-ended priority queues.
 --
---  Same shape as Bench.Driver, and fed by the same key generator, but the
+--  Same shape as Bench.Driver and fed by the same key generator, but the
 --  scenarios use both ends of the queue. Only heap kinds that can extract a
---  maximum are instantiated with it, so its rows are not comparable with the
---  single-ended table row for row; what they are for is measuring what the
---  second end costs relative to the first.
+--  maximum are instantiated with it.
 
 generic
    Heap_Name : String;

@@ -6,10 +6,9 @@
 --  arena.
 --
 --  A heap here is a tree of the shared pool, named by the index of its root,
---  so the adapter holds root indices where the other adapters hold heap
---  objects. The single-heap scenarios use one such tree; the meld scenarios
---  use an accumulator and several operands, all of them trees of the same
---  pool, which is what lets a meld be a splice.
+--  so the adapter holds root indices rather than heap objects. The meld
+--  scenarios use an accumulator and several operands, all trees of the same
+--  pool.
 
 with Bench.Driver;
 with Bench.Meld_Driver;

@@ -2,13 +2,10 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  Root of a collection of SPARK examples of heap (priority queue) data
---  structures, all of them represented inside arrays: either implicitly
---  (the position in the array encodes the tree structure) or explicitly
---  (a pool array of nodes linked by indices instead of pointers).
---
---  See the top-level README.md for the catalogue of heap kinds and for the
---  verification level reached by each of them.
+--  Root of a collection of SPARK heap (priority queue) data structures, all
+--  of them represented inside arrays: either implicitly, the position in the
+--  array encoding the tree structure, or explicitly, as a pool of nodes
+--  linked by indices instead of pointers.
 
 package Heaps with SPARK_Mode, Pure is
 
@@ -28,8 +25,7 @@ package Heaps with SPARK_Mode, Pure is
    subtype Index is Extended_Index range 1 .. Max_Capacity;
 
    type Key_Array is array (Index range <>) of Key_Type;
-   --  Every heap in the collection stores its keys in such an array, indexed
-   --  from 1. Sharing the type lets all of them share the multiset model in
-   --  Heaps.Models.
+   --  Every heap stores its keys in such an array, indexed from 1. Sharing
+   --  the type lets them share the multiset model in Heaps.Models.
 
 end Heaps;

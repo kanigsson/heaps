@@ -2,11 +2,9 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -361,17 +359,18 @@ package body Heaps.Weak with SPARK_Mode is
       --  The model of the concatenation, which the rebuild has to preserve
 
       Prev_K : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Heaps.Unsorted.Meld
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       Prev : Heap (Cap) with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       A     : Index;
       Above : Key_Type;
    begin
-      --  Append the keys of From. This is the same argument as the unsorted
-      --  array's meld: the prefix does not move and each copied key joins the
-      --  sum in turn. The flip bit of a slot that becomes a node is cleared,
+      --  Append the keys of From: the prefix does not move and each copied
+      --  key joins the sum in turn. The flip bit of a slot that becomes a node is cleared,
       --  so that a melded heap does not depend on what the slot last held.
 
       for I in 1 .. From.Last loop
@@ -483,7 +482,8 @@ package body Heaps.Weak with SPARK_Mode is
       Old_H : constant Heap := H with Ghost;
 
       Prev : Heap (Old_H.Capacity) with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       J : Index;
       Above : Key_Type;

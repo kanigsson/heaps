@@ -143,7 +143,8 @@ package body Heaps.Sorted with SPARK_Mode is
       with Ghost;
 
       Prev : Key_Array (1 .. Cap) with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       I : Extended_Index := Base;
       J : Extended_Index := Extra;

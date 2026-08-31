@@ -20,22 +20,16 @@
 --
 --  A layer holds L nodes instead of 2 ** L, so a beap of N nodes is about
 --  sqrt (2 * N) layers deep and both operations are O (sqrt N) rather than
---  O (log N). That is asymptotically worse than any of the tree heaps here;
---  the beap is included for the shape of its invariant, not for its speed.
+--  O (log N).
 --
 --  Because the layer of an index cannot be recovered from the index by
 --  shifting, as the depth of a node in a binary heap can, the heap carries the
 --  layer and the starting offset of the slot that the next insertion will use.
 --  Both are maintained in constant time by Insert and Extract_Min, which keeps
 --  the operations free of any search for a layer boundary.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(sqrt n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model cannot reasonably be evaluated at run time, and the
+--  contracts are discharged by proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -195,13 +189,11 @@ package Heaps.Beap with SPARK_Mode is
                   and Model (Into) = Model (Into)'Old + Model (From)'Old;
    --  Destructive meld: Into receives every key of From, which is left empty.
    --
-   --  Unlike the tree heaps, the beap does not append and rebuild. A bottom-up
-   --  rebuild of a beap is not linear: a node in layer L sifts down through
-   --  the sqrt (n) - L layers below it, which sums to O (n ** 1.5). Inserting
-   --  the keys one at a time costs O (m sqrt (n)) instead, and that is smaller
-   --  for every m. The beap sides with the block-min directory here rather
-   --  than with the implicit trees, and for the same reason: when insertion is
-   --  cheap enough, repeated insertion *is* the better meld.
+   --  This inserts the keys one at a time rather than rebuilding. A
+   --  bottom-up rebuild of a beap is not linear -- a node in layer L sifts
+   --  down through the sqrt (n) - L layers below it, which sums to
+   --  O (n ** 1.5) -- while repeated insertion costs O (m sqrt (n)), smaller
+   --  for every m.
    --
    --  Is_Heap (From) is required only for uniformity with the rest of the
    --  family. The insertions do not depend on it.

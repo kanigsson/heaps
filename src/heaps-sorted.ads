@@ -5,16 +5,12 @@
 --  Sorted array "heap": the other degenerate priority queue.
 --
 --  Keys are kept in non-increasing order, so the minimum sits at the end of
---  the array and extraction is a decrement. Insertion pays for it: the tail
---  of the array has to be shifted to open a slot. This is the O(n) / O(1)
---  corner of the design space, exactly opposite to Heaps.Unsorted.
---
---  Storing in decreasing rather than increasing order is what makes removal
---  free: dropping the last slot needs no shifting at all.
---
---  Verification level: silver, gold and platinum -- see README.md.
+--  the array and extraction is a decrement; insertion has to shift the tail
+--  to open a slot. Decreasing rather than increasing order is what makes
+--  removal free: dropping the last slot needs no shifting.
 
---  See the comment in Heaps.Unsorted on why assertions are disabled here.
+--  The ghost model cannot reasonably be evaluated at run time, and the
+--  contracts are discharged by proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,

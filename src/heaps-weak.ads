@@ -9,15 +9,12 @@
 --  subtree. The root of the whole structure is kept apart, at index 1: it has
 --  no left subtree, so it dominates everything, and it is the minimum.
 --
---  The relaxation buys the tree the freedom to exchange the two subtrees of a
---  node at no cost, which is what makes the structure worth having: a sift
---  step never has to look at two children and pick the smaller one, as a
---  binary heap does. It compares once, and if the comparison goes the wrong
---  way it swaps the two keys and swaps the two subtrees of the node -- which
---  turns the subtree it knows nothing about into the one it now dominates.
---  One comparison per level instead of two is the whole point of the
---  structure; the price is the bit that records, for each node, which of its
---  two array slots currently counts as the left one.
+--  The relaxation lets the two subtrees of a node be exchanged at no cost,
+--  so a sift step never has to look at two children and pick the smaller. It
+--  compares once, and if the comparison goes the wrong way it swaps the two
+--  keys and the two subtrees, turning the subtree it knows nothing about
+--  into the one it now dominates. The price is one bit per node, recording
+--  which of its two array slots currently counts as the left one.
 --
 --  The children of the node at index I are the slots 2 * I - 1 and 2 * I, as
 --  in a binary heap; the flip bit of I says which of the two is the left one.
@@ -29,14 +26,10 @@
 --  answerable to is not its parent but its distinguished ancestor: climb from
 --  the node while it is a left child, then take one more step. That ancestor
 --  is what Da computes, and the heap ordering is stated against it.
---
---  Verification level: silver, gold and platinum -- see README.md.
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(log n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model, a multiset built by recursion over the key array, cannot
+--  reasonably be evaluated at run time, and the contracts are discharged by
+--  proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -190,16 +183,11 @@ package Heaps.Weak with SPARK_Mode is
    --  Destructive meld: Into receives every key of From, which is left empty.
    --
    --  An implicit heap cannot splice two trees together, so this appends the
-   --  keys of From and rebuilds the whole array. The rebuild is the weak
-   --  heap's own bottom-up construction: walk the indices downwards and join
-   --  each node to its distinguished ancestor, which is one comparison and at
-   --  most one exchange per node. That is n + m comparisons; on top of them
-   --  sits the climb that finds each distinguished ancestor, which is short
-   --  on average -- the left-child chains it walks are disjoint paths -- and
-   --  logarithmic only in the worst case. That is the same bargain the binary
-   --  heap strikes, and it is the honest comparison to draw: rebuilding by
-   --  repeated insertion would be O(m log n) and would flatter the mergeable
-   --  structures.
+   --  keys of From and rebuilds the whole array by the bottom-up
+   --  construction: walk the indices downwards and join each node to its
+   --  distinguished ancestor, one comparison and at most one exchange per
+   --  node. On top of the n + m comparisons sits the climb that finds each
+   --  distinguished ancestor, short on average and logarithmic at worst.
    --
    --  Is_Heap (From) is required only for uniformity with the rest of the
    --  family. The rebuild does not depend on it.

@@ -2,11 +2,8 @@
 --  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 --
 
---  The ghost model of these units -- a functional multiset built by recursion
---  over the key array -- cannot reasonably be evaluated at run time: doing so
---  would turn every O(sqrt n) operation into a quadratic one. Since the
---  contracts are discharged by proof, run-time checking of them is redundant,
---  so assertions are disabled here whatever the compilation switches say.
+--  The ghost model cannot reasonably be evaluated at run time, and the
+--  contracts are discharged by proof, so assertions are disabled here.
 
 pragma Assertion_Policy (Ghost          => Ignore,
                          Pre            => Ignore,
@@ -610,7 +607,8 @@ package body Heaps.Beap with SPARK_Mode is
       --  a path leading down from the first one
 
       Before : Key_Array := H.Keys with Ghost;
-      --  See the comment on the homonym in Insert
+      --  Snapshot of the array before a single-slot write, so that the model
+      --  lemmas can relate the two states
 
       Hole : Index := 1;
       L    : Layer_Index := 1;

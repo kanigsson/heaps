@@ -8,18 +8,11 @@ package body Bench.Pairing_Heap is
 
    package Arena renames Heaps.Pairing_Pool;
 
-   --  The heaps are not objects here. They are trees of the one arena, named
-   --  by the index of their root, which is what lets a meld be a splice: the
-   --  other adapters need one heap object per operand and a meld has to move
-   --  keys between two arrays. This is the same adapter shape the other two
-   --  arenas need, for the same reason.
+   --  The heaps are not objects here: they are trees of the one arena, named
+   --  by the index of their root.
    --
-   --  Heaps.Pairing_Pool is instantiated with 2 ** 20 nodes, which is
-   --  Max_Elements, and no scenario holds more than that many keys across all
-   --  the trees at once -- one tree of Max_Elements for the single-heap
-   --  scenarios, Max_Elements for the accumulator in `meld-into-full` plus one
-   --  key per operand, and Operands * (Max_Elements / Operands) in
-   --  `meld-accumulate`.
+   --  The pool holds 2 ** 20 nodes, which is Max_Elements, and no scenario
+   --  holds more than that many keys across all its trees at once.
 
    T : Arena.Tree := 0;
    --  The tree the single-heap scenarios drive.

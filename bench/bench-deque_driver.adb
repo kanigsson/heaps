@@ -89,8 +89,7 @@ package body Bench.Deque_Driver is
       Start : Time;
    begin
       --  A bounded "best N so far" queue: every insertion is followed by the
-      --  eviction of the current worst, which is the standard reason to want
-      --  a double-ended heap in the first place.
+      --  eviction of the current worst.
 
       Prefill (N);
       Start := Clock;
