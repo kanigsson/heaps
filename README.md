@@ -4,20 +4,23 @@ Verified priority queues backed by arrays.
 
 ## Implementations
 
-| Heap | Insert | Extract | Proved | Notes |
-|------|--------|---------|:------:|-------|
-| Binary heap | O(log n) | O(log n) min | yes | Binary min-heap |
-| d-ary heap | O(log\_d n) | O(d log\_d n) min | yes | Configurable arity |
-| Weak heap | O(log n) | O(log n) min | yes | One flip bit per node, half the comparisons |
-| Min-max heap | O(log n) | O(log n) min or max | yes | Double-ended queue |
-| Interval heap | O(log n) | O(log n) min or max | yes | Double-ended, two keys per node |
-| Beap | O(sqrt n) | O(sqrt n) min | yes | Triangular layers, two parents per node |
-| Leftist heap | O(log n) | O(log n) min | yes | Mergeable, explicit tree in a shared node arena |
-| Skew heap | O(log n)* | O(log n)* min | yes | As the leftist heap with no rank field; * amortized |
-| Pairing heap | O(1) | O(log n)* min | yes | Multiway tree, child and sibling links; * amortized |
-| Block-min directory | O(1) | O(n / B + B) min | yes | One winner per block, B = 256 |
-| Unsorted array | O(1) | O(n) min | yes | Baseline |
-| Sorted array | O(n) | O(1) min | yes | Baseline |
+| Heap                | Notes                                           | Insert       | Extract        |
+|---------------------|-------------------------------------------------|:------------:|:--------------:|
+| Binary heap         | Binary min-heap                                 | `O(log n)`   | `O(log n)`     |
+| d-ary heap          | Configurable arity                              | `O(log_d n)` | `O(d log_d n)` |
+| Weak heap           | One flip bit per node, half the comparisons     | `O(log n)`   | `O(log n)`     |
+| Min-max heap        | Double-ended queue                              | `O(log n)`   | `O(log n)`     |
+| Interval heap       | Double-ended, two keys per node                 | `O(log n)`   | `O(log n)`     |
+| Beap                | Triangular layers, two parents per node         | `O(√n)`      | `O(√n)`        |
+| Leftist heap        | Mergeable, explicit tree in a shared node arena | `O(log n)`   | `O(log n)`     |
+| Skew heap           | As the leftist heap with no rank field          | `O(log n)`†  | `O(log n)`†    |
+| Pairing heap        | Multiway tree, child and sibling links          | `O(1)`       | `O(log n)`†    |
+| Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
+| Unsorted array      | Baseline                                        | `O(1)`       | `O(n)`         |
+| Sorted array        | Baseline                                        | `O(n)`       | `O(1)`         |
+
+Every implementation is proved. Extraction is of the minimum, except
+for the double-ended heaps, which extract either end. † amortized.
 
 ## Build, test, and prove
 
@@ -53,8 +56,8 @@ leftist         6.96  ███████████████████�
 ```
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
-[docs/index.html](docs/index.html) plots the same run with the metric,
-the sizes and the entries selectable.
+the [interactive charts](https://kanigsson.github.io/heaps/) plot the same
+run with the metric, the sizes and the entries selectable.
 
 ## What is proved
 
