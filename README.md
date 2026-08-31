@@ -25,9 +25,36 @@ Verified priority queues backed by arrays.
 gprbuild -P bench.gpr
 ./heaps_test
 ./open_heap_test
-./bench_main
+./bench_main --machine="an AMD Ryzen 9 3950X with GNAT Pro 27.0w at -O2" \
+  --summary --markdown=OBSERVATIONS.md --json=docs/results.js
 gnatprove -P heaps.gpr -j0 --level=4
 ```
+
+## Performance
+
+From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
+
+```
+Relative cost, geometric mean of the 6 single-heap scenarios at
+n = 1 000 000, binary heap = 1.00. Lower is better.
+
+open-proved     0.74  ██████
+open-buffered   0.89  ███████
+binary          1.00  ████████
+4-ary           1.62  █████████████
+8-ary           1.63  █████████████
+16-ary          1.73  ██████████████
+pairing         1.85  ███████████████
+min-max         2.12  █████████████████
+weak            2.28  ██████████████████
+interval        2.64  █████████████████████
+skew            6.72  ██████████████████████████████████████████████████████
+leftist         6.96  ████████████████████████████████████████████████████████
+```
+
+Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
+[docs/index.html](docs/index.html) plots the same run with the metric,
+the sizes and the entries selectable.
 
 ## What is proved
 

@@ -1,0 +1,447 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heaps in SPARK -- benchmark results</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1b1b1f; --dim: #6a6a75; --line: #d8d8e0;
+    --panel: #f6f6f8; --grid: #e8e8ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --fg: #e6e6ea; --dim: #9a9aa5; --line: #34343d;
+      --panel: #1e1e24; --grid: #2a2a32;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem 1.25rem 3rem; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .sub { color: var(--dim); margin: 0 0 1.25rem; }
+  .sub a { color: inherit; }
+  .controls {
+    display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    margin-bottom: 1.25rem;
+  }
+  fieldset {
+    border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+    margin: 0; padding: .6rem .75rem .7rem;
+  }
+  legend { color: var(--dim); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 0 .3rem; }
+  label { display: block; cursor: pointer; }
+  label.inline { display: inline-block; margin-right: .9rem; }
+  select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: .15rem .3rem; font: inherit; margin-top: .35rem; }
+  .entries { max-height: 12.5rem; overflow: auto; column-width: 8.5rem; }
+  .entries label { white-space: nowrap; }
+  .swatch { display: inline-block; width: .6rem; height: .6rem; border-radius: 2px; margin-right: .25rem; vertical-align: baseline; }
+  .buttons { margin-top: .4rem; }
+  button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .1rem .5rem; cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  figure { margin: 0; }
+  svg { width: 100%; height: auto; display: block; }
+  .axis { stroke: var(--line); }
+  .grid { stroke: var(--grid); }
+  .tick { fill: var(--dim); font-size: 11px; }
+  .lab { font-size: 11px; }
+  .note { color: var(--dim); margin-top: 1rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+
+<main>
+  <h1>Heaps in SPARK &mdash; benchmark results</h1>
+  <p class="sub" id="sub"></p>
+
+  <div class="controls">
+    <fieldset>
+      <legend>View</legend>
+      <label class="inline"><input type="radio" name="view" value="size" checked> across sizes</label>
+      <label class="inline"><input type="radio" name="view" value="heap"> at one size</label>
+      <label>n <select id="size"></select></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Metric</legend>
+      <label><input type="radio" name="metric" value="abs" checked> nanoseconds per operation</label>
+      <label><input type="radio" name="metric" value="ratio"> ratio to <select id="baseline"></select></label>
+      <label><input type="radio" name="metric" value="growth"> growth, against its own smallest n</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Scenario</legend>
+      <select id="scenario"></select>
+      <p class="note" id="scenario-note" style="margin:.5rem 0 0"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Entries</legend>
+      <div class="entries" id="entries"></div>
+      <div class="buttons">
+        <button type="button" data-pick="all">all</button>
+        <button type="button" data-pick="none">none</button>
+        <button type="button" data-pick="arrays">array heaps</button>
+        <button type="button" data-pick="arenas">arenas</button>
+      </div>
+    </fieldset>
+  </div>
+
+  <figure><svg id="chart" viewBox="0 0 920 520" role="img" aria-label="benchmark chart"></svg></figure>
+
+  <p class="note">
+    Both axes are logarithmic, so a straight line is a power of <code>n</code> and its
+    slope is the exponent: flat is constant, one decade of time per decade of size is
+    linear. A meld figure is nanoseconds per <em>meld</em> rather than per key, and one
+    measurement is sixteen melds.
+  </p>
+</main>
+
+<script src="results.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var rows = RESULTS.map(function (r) {
+    return { heap: r[0], scenario: r[1], n: r[2], ns: r[3] };
+  });
+
+  function distinct(key) {
+    var seen = [], i;
+    for (i = 0; i < rows.length; i++) {
+      if (seen.indexOf(rows[i][key]) < 0) { seen.push(rows[i][key]); }
+    }
+    return seen;
+  }
+
+  var heaps = distinct("heap");
+  var scenarios = distinct("scenario");
+  var sizes = distinct("n").sort(function (a, b) { return a - b; });
+
+  var index = {};
+  rows.forEach(function (r) { index[r.heap + "|" + r.scenario + "|" + r.n] = r.ns; });
+  function at(heap, scenario, n) { return index[heap + "|" + scenario + "|" + n]; }
+
+  var GROUPS = {
+    "single heap": ["fill", "drain", "churn", "replace-forward", "insert-asc", "insert-desc"],
+    "meld": ["meld-accumulate", "meld-into-full"],
+    "double ended": ["drain-max", "drain-both", "trim"]
+  };
+  var NOTES = {
+    "fill": "insert n pseudo-random keys into an empty heap",
+    "drain": "extract every key of a prefilled heap",
+    "churn": "extract the minimum and insert a new random key, n times",
+    "replace-forward": "extract the minimum and reinsert it raised by a random step",
+    "insert-asc": "insert n keys in increasing order",
+    "insert-desc": "insert n keys in decreasing order",
+    "meld-accumulate": "fold sixteen heaps of n/16 keys into one accumulator",
+    "meld-into-full": "fold sixteen one-key heaps into an accumulator of n keys",
+    "drain-max": "extract every key from the high end",
+    "drain-both": "alternate extraction from the two ends",
+    "trim": "insert a key and extract the maximum, as a bounded top-n queue does"
+  };
+  var PICKS = {
+    arrays: ["binary", "4-ary", "8-ary", "16-ary", "weak", "min-max", "interval"],
+    arenas: ["leftist", "skew", "pairing"]
+  };
+
+  var PALETTE = [
+    "#3b7dd8", "#d1495b", "#2a9d8f", "#e07a1f", "#7b5ea7", "#00838f",
+    "#b5651d", "#4f772d", "#c2185b", "#5c6bc0", "#8d6e63", "#00897b",
+    "#ef6c00", "#6a1b9a", "#546e7a", "#9e9d24"
+  ];
+  var colour = {};
+  heaps.forEach(function (h, i) { colour[h] = PALETTE[i % PALETTE.length]; });
+
+  var state = {
+    view: "size",
+    metric: "abs",
+    scenario: scenarios[0],
+    n: sizes[sizes.length - 1],
+    baseline: heaps.indexOf("binary") >= 0 ? "binary" : heaps[0],
+    shown: {}
+  };
+  heaps.forEach(function (h) { state.shown[h] = true; });
+
+  /* ---- controls ---- */
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function fillSelect(el, values, selected) {
+    el.innerHTML = "";
+    values.forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = String(v.value === undefined ? v : v.value);
+      o.textContent = v.label === undefined ? String(v) : v.label;
+      if (o.value === String(selected)) { o.selected = true; }
+      el.appendChild(o);
+    });
+  }
+
+  function grouped(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+  fillSelect($("size"), sizes.map(function (n) { return { value: n, label: grouped(n) }; }), state.n);
+  fillSelect($("baseline"), heaps, state.baseline);
+
+  (function () {
+    var el = $("scenario"), placed = {};
+    el.innerHTML = "";
+    Object.keys(GROUPS).forEach(function (g) {
+      var og = document.createElement("optgroup");
+      og.label = g;
+      GROUPS[g].forEach(function (s) {
+        if (scenarios.indexOf(s) < 0) { return; }
+        placed[s] = true;
+        var o = document.createElement("option");
+        o.value = s; o.textContent = s;
+        og.appendChild(o);
+      });
+      if (og.childNodes.length) { el.appendChild(og); }
+    });
+    scenarios.forEach(function (s) {
+      if (placed[s]) { return; }
+      var o = document.createElement("option");
+      o.value = s; o.textContent = s;
+      el.appendChild(o);
+    });
+    el.value = state.scenario;
+  }());
+
+  (function () {
+    var box = $("entries");
+    heaps.forEach(function (h) {
+      var l = document.createElement("label");
+      l.innerHTML = '<input type="checkbox" checked data-heap="' + h + '">' +
+        '<span class="swatch" style="background:' + colour[h] + '"></span>' + h;
+      box.appendChild(l);
+    });
+    box.addEventListener("change", function (e) {
+      var h = e.target.getAttribute("data-heap");
+      if (h) { state.shown[h] = e.target.checked; render(); }
+    });
+  }());
+
+  document.querySelectorAll("[data-pick]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var pick = b.getAttribute("data-pick");
+      heaps.forEach(function (h) {
+        state.shown[h] = pick === "all" ? true
+          : pick === "none" ? false
+          : PICKS[pick].indexOf(h) >= 0;
+      });
+      document.querySelectorAll("[data-heap]").forEach(function (c) {
+        c.checked = state.shown[c.getAttribute("data-heap")];
+      });
+      render();
+    });
+  });
+
+  document.querySelectorAll('input[name="view"]').forEach(function (r) {
+    r.addEventListener("change", function () { state.view = r.value; render(); });
+  });
+  document.querySelectorAll('input[name="metric"]').forEach(function (r) {
+    r.addEventListener("change", function () { state.metric = r.value; render(); });
+  });
+  $("size").addEventListener("change", function () { state.n = Number(this.value); render(); });
+  $("baseline").addEventListener("change", function () {
+    state.baseline = this.value;
+    if (state.metric !== "ratio") {
+      state.metric = "ratio";
+      document.querySelector('input[name="metric"][value="ratio"]').checked = true;
+    }
+    render();
+  });
+  $("scenario").addEventListener("change", function () { state.scenario = this.value; render(); });
+
+  /* ---- data for the current state ---- */
+
+  function value(heap, n) {
+    var v = at(heap, state.scenario, n), b;
+    if (v === undefined) { return undefined; }
+    if (state.metric === "ratio") {
+      b = at(state.baseline, state.scenario, n);
+      return b === undefined ? undefined : v / b;
+    }
+    if (state.metric === "growth") {
+      var first;
+      for (var i = 0; i < sizes.length; i++) {
+        first = at(heap, state.scenario, sizes[i]);
+        if (first !== undefined) { return v / first; }
+      }
+      return undefined;
+    }
+    return v;
+  }
+
+  function unit() {
+    return state.metric === "abs" ? "ns/op"
+      : state.metric === "ratio" ? "× " + state.baseline
+      : "× its own smallest n";
+  }
+
+  function format(v) {
+    return v >= 1000 ? v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+      : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+  }
+
+  /* ---- drawing ---- */
+
+  var NS = "http://www.w3.org/2000/svg";
+  function node(name, attrs, text) {
+    var e = document.createElementNS(NS, name), k;
+    for (k in attrs) { if (attrs.hasOwnProperty(k)) { e.setAttribute(k, attrs[k]); } }
+    if (text !== undefined) { e.textContent = text; }
+    return e;
+  }
+
+  var W = 920, H = 520;
+
+  function decades(lo, hi) {
+    var out = [], p = Math.floor(Math.log10(lo));
+    for (; p <= Math.ceil(Math.log10(hi)); p++) { out.push(Math.pow(10, p)); }
+    return out;
+  }
+
+  function tickLabel(v) {
+    return v >= 1 ? format(v) : String(v);
+  }
+
+  function render() {
+    var svg = $("chart");
+    while (svg.firstChild) { svg.removeChild(svg.firstChild); }
+    $("scenario-note").textContent = NOTES[state.scenario] || "";
+    $("size").disabled = state.view !== "heap";
+
+    var picked = heaps.filter(function (h) { return state.shown[h]; });
+    var pts = [], lo = Infinity, hi = 0;
+
+    picked.forEach(function (h) {
+      var series = [];
+      sizes.forEach(function (n) {
+        if (state.view === "heap" && n !== state.n) { return; }
+        var v = value(h, n);
+        if (v === undefined || v <= 0) { return; }
+        series.push({ n: n, v: v });
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      });
+      if (series.length) { pts.push({ heap: h, series: series }); }
+    });
+
+    if (!pts.length) {
+      svg.appendChild(node("text", { x: W / 2, y: H / 2, "text-anchor": "middle",
+        class: "tick" }, "nothing selected"));
+      return;
+    }
+    if (lo === hi) { lo = lo / 2; hi = hi * 2; }
+
+    var L = 78, R = state.view === "size" ? 140 : 96, T = 26, B = 52;
+    var x0 = L, x1 = W - R, y0 = T, y1 = H - B;
+    var lgLo = Math.log10(lo), lgHi = Math.log10(hi);
+    var pad = (lgHi - lgLo) * 0.06 || 0.2;
+    lgLo -= pad; lgHi += pad;
+    function y(v) { return y1 - (Math.log10(v) - lgLo) / (lgHi - lgLo) * (y1 - y0); }
+
+    /* the value axis runs up the chart when size is the other axis, and along
+       it when the entries are the rows */
+    var ticks = decades(Math.pow(10, lgLo), Math.pow(10, lgHi));
+
+    if (state.view === "size") {
+      ticks.forEach(function (d) {
+        var yy = y(d);
+        if (yy < y0 - 1 || yy > y1 + 1) { return; }
+        svg.appendChild(node("line", { x1: x0, x2: x1, y1: yy, y2: yy, class: "grid" }));
+        svg.appendChild(node("text", { x: x0 - 8, y: yy + 4, "text-anchor": "end",
+          class: "tick" }, tickLabel(d)));
+      });
+      svg.appendChild(node("text", { x: x0 - 8, y: y0 - 10, "text-anchor": "end",
+        class: "tick" }, unit()));
+    }
+
+    if (state.view === "size") {
+      var lgN0 = Math.log10(sizes[0]), lgN1 = Math.log10(sizes[sizes.length - 1]);
+      function x(n) {
+        return lgN1 === lgN0 ? (x0 + x1) / 2
+          : x0 + (Math.log10(n) - lgN0) / (lgN1 - lgN0) * (x1 - x0);
+      }
+
+      sizes.forEach(function (n) {
+        svg.appendChild(node("line", { x1: x(n), x2: x(n), y1: y0, y2: y1, class: "grid" }));
+        svg.appendChild(node("text", { x: x(n), y: y1 + 20, "text-anchor": "middle",
+          class: "tick" }, grouped(n)));
+      });
+      svg.appendChild(node("text", { x: (x0 + x1) / 2, y: H - 12, "text-anchor": "middle",
+        class: "tick" }, "n"));
+
+      var labels = [];
+      pts.forEach(function (p) {
+        var d = p.series.map(function (s) { return x(s.n) + "," + y(s.v); }).join(" ");
+        svg.appendChild(node("polyline", { points: d, fill: "none", stroke: colour[p.heap],
+          "stroke-width": 2, "stroke-linejoin": "round" }));
+        p.series.forEach(function (s) {
+          var c = node("circle", { cx: x(s.n), cy: y(s.v), r: 3.2, fill: colour[p.heap] });
+          c.appendChild(node("title", {}, p.heap + " -- " + state.scenario +
+            " at n = " + grouped(s.n) + ": " + format(s.v) + " " + unit()));
+          svg.appendChild(c);
+        });
+        var last = p.series[p.series.length - 1];
+        labels.push({ heap: p.heap, x: x(last.n) + 8, y: y(last.v) });
+      });
+
+      /* keep the end labels from sitting on top of each other */
+      labels.sort(function (a, b) { return a.y - b.y; });
+      for (var i = 1; i < labels.length; i++) {
+        if (labels[i].y - labels[i - 1].y < 13) { labels[i].y = labels[i - 1].y + 13; }
+      }
+      labels.forEach(function (l) {
+        svg.appendChild(node("text", { x: l.x, y: l.y + 4, class: "lab",
+          fill: colour[l.heap] }, l.heap));
+      });
+    } else {
+      var span = function (v) {
+        return (Math.log10(v) - lgLo) / (lgHi - lgLo) * (x1 - x0);
+      };
+
+      ticks.forEach(function (d) {
+        var xx = x0 + span(d);
+        if (xx < x0 - 1 || xx > x1 + 1) { return; }
+        svg.appendChild(node("line", { x1: xx, x2: xx, y1: y0, y2: y1, class: "grid" }));
+        svg.appendChild(node("text", { x: xx, y: y1 + 20, "text-anchor": "middle",
+          class: "tick" }, tickLabel(d)));
+      });
+
+      var order = pts.slice().sort(function (a, b) {
+        return a.series[0].v - b.series[0].v;
+      });
+      var step = (y1 - y0) / order.length;
+      var bar = Math.min(22, step * 0.66);
+      var base = y1;
+      order.forEach(function (p, i) {
+        var v = p.series[0].v;
+        var cy = y0 + step * (i + 0.5);
+        var len = span(v);
+        var g = node("g", {});
+        g.appendChild(node("rect", { x: x0, y: cy - bar / 2, width: Math.max(1, len),
+          height: bar, fill: colour[p.heap], rx: 2 }));
+        g.appendChild(node("text", { x: x0 - 8, y: cy + 4, "text-anchor": "end",
+          class: "lab", fill: colour[p.heap] }, p.heap));
+        g.appendChild(node("text", { x: x0 + len + 6, y: cy + 4, class: "tick" }, format(v)));
+        g.appendChild(node("title", {}, p.heap + " -- " + state.scenario +
+          " at n = " + grouped(state.n) + ": " + format(v) + " " + unit()));
+        svg.appendChild(g);
+      });
+      svg.appendChild(node("line", { x1: x0, x2: x0, y1: y0, y2: base, class: "axis" }));
+      svg.appendChild(node("text", { x: (x0 + x1) / 2, y: H - 12, "text-anchor": "middle",
+        class: "tick" }, unit() + " at n = " + grouped(state.n) +
+        ", on a logarithmic axis"));
+    }
+  }
+
+  /* the value axis labels double as the y ticks in the bar view, so redraw once
+     the fonts are in and the sub-title is set */
+  $("sub").innerHTML = "One run of the whole suite on " +
+    (typeof MACHINE === "string" ? MACHINE : "an unnamed machine") +
+    ', the same figures as <a href="../OBSERVATIONS.md">OBSERVATIONS.md</a>.';
+  render();
+}());
+</script>
