@@ -22,6 +22,7 @@ with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
+with Heaps.Sorted_Linked;
 with Heaps.Tournament;
 with Heaps.Unsorted;
 with Heaps.Weak;
@@ -387,6 +388,81 @@ procedure Heaps_Test is
       Check (Heaps.Sorted.Is_Empty (H), "sorted: empty after draining");
       Check (Sum = Back, "sorted: nothing lost on the way");
    end Test_Sorted;
+
+   procedure Test_Sorted_Linked (N : Positive);
+   procedure Test_Sorted_Linked (N : Positive) is
+      H     : Heaps.Sorted_Linked.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Peek  : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Sorted_Linked.Insert (H, K);
+         Check (Heaps.Sorted_Linked.Size (H) = I,
+                "sorted-linked: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Peek := Heaps.Sorted_Linked.Peek_Min (H);
+         Heaps.Sorted_Linked.Extract_Min (H, K);
+         Check (K = Peek,
+                "sorted-linked: peek agrees with the extracted key");
+         Check (K >= Prev,
+                "sorted-linked: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Sorted_Linked.Is_Empty (H),
+             "sorted-linked: empty after draining");
+      Check (Sum = Back, "sorted-linked: nothing lost on the way");
+   end Test_Sorted_Linked;
+
+   procedure Test_Sorted_Linked_Meld (N, M : Natural);
+   procedure Test_Sorted_Linked_Meld (N, M : Natural) is
+      Total  : constant Extended_Index := Extended_Index (N + M);
+      Into   : Heaps.Sorted_Linked.Heap (Total);
+      From   : Heaps.Sorted_Linked.Heap (Total);
+      Oracle : Heaps.Sorted.Heap (Total);
+      State  : Long_Long_Integer := 314_159_265;
+      K      : Key_Type;
+      Expect : Key_Type;
+   begin
+      for Side in 1 .. 2 loop
+         for I in 1 .. (if Side = 1 then N else M) loop
+            State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+            K := Key_Type (State mod 100_000);
+            Heaps.Sorted.Insert (Oracle, K);
+            if Side = 1 then
+               Heaps.Sorted_Linked.Insert (Into, K);
+            else
+               Heaps.Sorted_Linked.Insert (From, K);
+            end if;
+         end loop;
+      end loop;
+
+      Heaps.Sorted_Linked.Meld (Into, From);
+      Check (Heaps.Sorted_Linked.Size (Into) = Total,
+             "sorted-linked meld: size is the sum");
+      Check (Heaps.Sorted_Linked.Is_Empty (From),
+             "sorted-linked meld: source is empty");
+
+      for I in 1 .. Total loop
+         Heaps.Sorted.Extract_Min (Oracle, Expect);
+         Heaps.Sorted_Linked.Extract_Min (Into, K);
+         Check (K = Expect,
+                "sorted-linked meld: drain matches the oracle");
+      end loop;
+
+      Check (Heaps.Sorted_Linked.Is_Empty (Into),
+             "sorted-linked meld: result is empty after draining");
+   end Test_Sorted_Linked_Meld;
 
    procedure Test_Unsorted (N : Positive);
    procedure Test_Unsorted (N : Positive) is
@@ -1375,6 +1451,7 @@ begin
       Test_Dary (N, 16);
       Test_Dary (N, 64);
       Test_Sorted (N);
+      Test_Sorted_Linked (N);
       Test_Unsorted (N);
    end loop;
 
@@ -1390,6 +1467,13 @@ begin
       Test_Meld (0, N, 3);
    end loop;
    Test_Meld (0, 0, 2);
+
+   Test_Sorted_Linked_Meld (64, 64);
+   Test_Sorted_Linked_Meld (64, 1);
+   Test_Sorted_Linked_Meld (1, 64);
+   Test_Sorted_Linked_Meld (64, 0);
+   Test_Sorted_Linked_Meld (0, 64);
+   Test_Sorted_Linked_Meld (0, 0);
 
    --  The arena's own meld, over the same shapes, plus a k-way fold: with
    --  one pool holding every operand, folding k trees into one is the
