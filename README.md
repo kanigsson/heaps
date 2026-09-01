@@ -7,6 +7,7 @@ Verified priority queues backed by arrays.
 | Heap                | Notes                                           | Insert       | Extract        |
 |---------------------|-------------------------------------------------|:------------:|:--------------:|
 | Binary heap         | Binary min-heap                                 | `O(log n)`   | `O(log n)`     |
+| Tournament tree     | Cached winner at every internal node            | `O(log n)`   | `O(log n)`     |
 | d-ary heap          | Configurable arity                              | `O(log_d n)` | `O(d log_d n)` |
 | Weak heap           | One flip bit per node, half the comparisons     | `O(log n)`   | `O(log n)`     |
 | Min-max heap        | Double-ended queue                              | `O(log n)`   | `O(log n)`     |
@@ -42,17 +43,18 @@ Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
 open-proved     0.74  ██████
-open-buffered   0.89  ███████
+open-buffered   0.91  ███████
 binary          1.00  ████████
-4-ary           1.62  █████████████
 8-ary           1.63  █████████████
-16-ary          1.73  ██████████████
-pairing         1.85  ███████████████
-min-max         2.12  █████████████████
-weak            2.28  ██████████████████
-interval        2.64  █████████████████████
-skew            6.72  ██████████████████████████████████████████████████████
-leftist         6.96  ████████████████████████████████████████████████████████
+4-ary           1.63  █████████████
+16-ary          1.74  ██████████████
+min-max         2.13  █████████████████
+weak            2.26  ██████████████████
+pairing         2.31  ██████████████████
+interval        2.67  █████████████████████
+skew            7.02  ████████████████████████████████████████████████████████
+leftist         7.62  █████████████████████████████████████████████████████████████
+tournament      9.07  ████████████████████████████████████████████████████████████████+
 ```
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
@@ -79,7 +81,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 ### Array-backed selection structures
 
-- Tournament (winner) tree
 - Min-max tournament tree
 
 ### Array-backed node pools

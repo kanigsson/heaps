@@ -29,6 +29,7 @@ with Bench.Open_Proved_Heap;
 with Bench.Pairing_Heap;
 with Bench.Skew_Heap;
 with Bench.Sorted_Heap;
+with Bench.Tournament_Heap;
 with Bench.Unsorted_Heap;
 with Bench.Weak_Heap;
 
@@ -71,6 +72,7 @@ procedure Bench_Main is
 begin
    Bench.Print_Header;
    Bench.Binary_Heap.Runner.Run (Sizes);
+   Bench.Tournament_Heap.Runner.Run (Sizes);
    Bench.Block_Min_Heap.Runner.Run (Beap_Sizes);
    Bench.Dary_4.Runner.Run (Sizes);
    Bench.Dary_8.Runner.Run (Sizes);
@@ -89,6 +91,7 @@ begin
 
    --  Meld, each entry over the sizes its own worst operation can afford.
    Bench.Binary_Heap.Meld_Runner.Run (Sizes);
+   Bench.Tournament_Heap.Meld_Runner.Run (Sizes);
    Bench.Dary_4.Meld_Runner.Run (Sizes);
    Bench.Dary_8.Meld_Runner.Run (Sizes);
    Bench.Dary_16.Meld_Runner.Run (Sizes);

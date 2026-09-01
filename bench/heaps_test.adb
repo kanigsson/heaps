@@ -21,6 +21,7 @@ with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
+with Heaps.Tournament;
 with Heaps.Unsorted;
 with Heaps.Weak;
 
@@ -202,6 +203,69 @@ procedure Heaps_Test is
    end Test_Binary;
 
    procedure Test_Block_Min (N : Positive);
+
+   procedure Test_Tournament (N : Positive);
+   procedure Test_Tournament (N : Positive) is
+      H     : Heaps.Tournament.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Tournament.Insert (H, K);
+         Check (Heaps.Tournament.Size (H) = I,
+                "tournament: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Tournament.Peek_Min (H)
+                  = Heaps.Tournament.Min_Of (H),
+                "tournament: root agrees with the array minimum");
+         Heaps.Tournament.Extract_Min (H, K);
+         Check (K >= Prev,
+                "tournament: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Tournament.Is_Empty (H),
+             "tournament: empty after draining");
+      Check (Sum = Back, "tournament: nothing lost on the way");
+   end Test_Tournament;
+
+   procedure Test_Tournament_Churn (N : Positive);
+   procedure Test_Tournament_Churn (N : Positive) is
+      H     : Heaps.Tournament.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Tournament.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Tournament.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Tournament.Insert (H, Key_Type (State mod 1_000));
+         Check (Heaps.Tournament.Peek_Min (H)
+                  = Heaps.Tournament.Min_Of (H),
+                "tournament: churn keeps the winner path current");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Tournament.Extract_Min (H, K);
+         Check (K >= Prev, "tournament: churned tree drains in order");
+         Prev := K;
+      end loop;
+   end Test_Tournament_Churn;
+
    procedure Test_Block_Min (N : Positive) is
       Capacity : constant Extended_Index := Extended_Index (N);
       H     : Heaps.Block_Min.Heap
@@ -552,6 +616,8 @@ procedure Heaps_Test is
       A_From : Heaps.Unsorted.Heap (Extended_Index (Total));
       B_Into : Heaps.Binary.Heap (Extended_Index (Total));
       B_From : Heaps.Binary.Heap (Extended_Index (Total));
+      T_Into : Heaps.Tournament.Heap (Extended_Index (Total));
+      T_From : Heaps.Tournament.Heap (Extended_Index (Total));
       D_Into : Heaps.Dary.Heap (Extended_Index (Total), Arity);
       D_From : Heaps.Dary.Heap (Extended_Index (Total), Arity);
       C_Into : Heaps.Block_Min.Heap
@@ -586,6 +652,7 @@ procedure Heaps_Test is
       K     : Key_Type;
       A_Key : Key_Type;
       B_Key : Key_Type;
+      T_Key : Key_Type;
       D_Key : Key_Type;
       C_Key : Key_Type;
       W_Key : Key_Type;
@@ -611,6 +678,7 @@ procedure Heaps_Test is
             if Into_Target then
                Heaps.Unsorted.Insert (A_Into, K);
                Heaps.Binary.Insert (B_Into, K);
+               Heaps.Tournament.Insert (T_Into, K);
                Heaps.Dary.Insert (D_Into, K);
                Heaps.Block_Min.Insert (C_Into, K);
                Heaps.Weak.Insert (W_Into, K);
@@ -624,6 +692,7 @@ procedure Heaps_Test is
             else
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
+               Heaps.Tournament.Insert (T_From, K);
                Heaps.Dary.Insert (D_From, K);
                Heaps.Block_Min.Insert (C_From, K);
                Heaps.Weak.Insert (W_From, K);
@@ -650,6 +719,7 @@ procedure Heaps_Test is
 
       Heaps.Unsorted.Meld (A_Into, A_From);
       Heaps.Binary.Meld (B_Into, B_From);
+      Heaps.Tournament.Meld (T_Into, T_From);
       Heaps.Dary.Meld (D_Into, D_From);
       Heaps.Block_Min.Meld (C_Into, C_From);
       Heaps.Weak.Meld (W_Into, W_From);
@@ -669,6 +739,10 @@ procedure Heaps_Test is
              "meld: unsorted source is emptied");
       Check (Heaps.Binary.Is_Empty (B_From),
              "meld: binary source is emptied");
+      Check (Heaps.Tournament.Size (T_Into) = Total,
+             "meld: tournament size is the sum");
+      Check (Heaps.Tournament.Is_Empty (T_From),
+             "meld: tournament source is emptied");
       Check (Heaps.Dary.Size (D_Into) = Total, "meld: d-ary size is the sum");
       Check (Heaps.Dary.Is_Empty (D_From), "meld: d-ary source is emptied");
       Check (Heaps.Block_Min.Size (C_Into) = Total,
@@ -721,6 +795,9 @@ procedure Heaps_Test is
       for I in 1 .. Total loop
          Check (Heaps.Binary.Peek_Min (B_Into) = Heaps.Binary.Min_Of (B_Into),
                 "meld: binary peek agrees with the array minimum");
+         Check (Heaps.Tournament.Peek_Min (T_Into)
+                  = Heaps.Tournament.Min_Of (T_Into),
+                "meld: tournament root agrees with the array minimum");
 
          Check (Heaps.Dary.Peek_Min (D_Into) = Heaps.Dary.Min_Of (D_Into),
                 "meld: d-ary peek agrees with the array minimum");
@@ -741,6 +818,7 @@ procedure Heaps_Test is
 
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
+         Heaps.Tournament.Extract_Min (T_Into, T_Key);
          Heaps.Dary.Extract_Min (D_Into, D_Key);
          Heaps.Block_Min.Extract_Min (C_Into, C_Key);
          Heaps.Weak.Extract_Min (W_Into, W_Key);
@@ -754,6 +832,8 @@ procedure Heaps_Test is
 
          Check (A_Key = Oracle (I), "meld: unsorted drain matches the oracle");
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
+         Check (T_Key = Oracle (I),
+                "meld: tournament drain matches the oracle");
          Check (D_Key = Oracle (I), "meld: d-ary drain matches the oracle");
          Check (C_Key = Oracle (I),
                 "meld: block-min drain matches the oracle");
@@ -766,7 +846,8 @@ procedure Heaps_Test is
          Check (Q_Key = Oracle (I), "meld: skew drain matches the oracle");
          Check (G_Key = Oracle (I),
                 "meld: pairing drain matches the oracle");
-         Check (A_Key = B_Key and A_Key = D_Key and A_Key = C_Key
+         Check (A_Key = B_Key and A_Key = T_Key
+                and A_Key = D_Key and A_Key = C_Key
                 and A_Key = W_Key and A_Key = M_Key and A_Key = V_Key
                 and A_Key = P_Key and A_Key = S_Key and A_Key = L_Key
                 and A_Key = Q_Key and A_Key = G_Key,
@@ -779,6 +860,8 @@ procedure Heaps_Test is
              "meld: unsorted empty after draining");
       Check (Heaps.Binary.Is_Empty (B_Into),
              "meld: binary empty after draining");
+      Check (Heaps.Tournament.Is_Empty (T_Into),
+             "meld: tournament empty after draining");
       Check (Heaps.Beap.Is_Empty (P_Into), "meld: beap empty after draining");
       Check (Heaps.Sorted.Is_Empty (S_Into),
              "meld: sorted empty after draining");
@@ -1187,6 +1270,7 @@ begin
    --  boundaries in both directions.
    for N in 1 .. 200 loop
       Test_Beap_Churn (N);
+      Test_Tournament_Churn (N);
       Test_Weak_Churn (N);
    end loop;
 
@@ -1201,6 +1285,7 @@ begin
 
    for N of Sizes loop
       Test_Binary (N);
+      Test_Tournament (N);
       Test_Block_Min (N);
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
