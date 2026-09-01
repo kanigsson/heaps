@@ -13,6 +13,7 @@ with Heaps;       use Heaps;
 with Heaps.Beap;
 with Heaps.Binary;
 with Heaps.Block_Min;
+with Heaps.Bucket;
 with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
@@ -205,6 +206,111 @@ procedure Heaps_Test is
    end Test_Binary;
 
    procedure Test_Block_Min (N : Positive);
+
+   procedure Test_Bucket (N : Positive);
+   procedure Test_Bucket (N : Positive) is
+      H     : Heaps.Bucket.Heap
+        (Capacity  => Extended_Index (N),
+         First_Key => -32,
+         Last_Key  => 32);
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      Heaps.Bucket.Clear (H);
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 65) - 32;
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Bucket.Insert (H, K);
+         Check (Heaps.Bucket.Size (H) = I,
+                "bucket: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Check (Heaps.Bucket.Peek_Min (H) >= -32
+                  and then Heaps.Bucket.Peek_Min (H) <= 32,
+                "bucket: minimum stays in the configured range");
+         Heaps.Bucket.Extract_Min (H, K);
+         Check (K >= Prev,
+                "bucket: keys come out in non-decreasing order");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Bucket.Is_Empty (H),
+             "bucket: empty after draining");
+      Check (Sum = Back, "bucket: nothing lost on the way");
+   end Test_Bucket;
+
+   procedure Test_Bucket_Churn (N : Positive);
+   procedure Test_Bucket_Churn (N : Positive) is
+      H     : Heaps.Bucket.Heap
+        (Capacity  => Extended_Index (N),
+         First_Key => -8,
+         Last_Key  => 8);
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      Heaps.Bucket.Clear (H);
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Bucket.Insert (H, Key_Type (State mod 17) - 8);
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Bucket.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Bucket.Insert (H, Key_Type (State mod 17) - 8);
+         Check (Heaps.Bucket.Size (H) = N,
+                "bucket: churn preserves size");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Bucket.Extract_Min (H, K);
+         Check (K >= Prev, "bucket: churned queue drains in order");
+         Prev := K;
+      end loop;
+   end Test_Bucket_Churn;
+
+   procedure Test_Bucket_Meld (N, M : Natural);
+   procedure Test_Bucket_Meld (N, M : Natural) is
+      Total : constant Extended_Index := Extended_Index (N + M);
+      Into  : Heaps.Bucket.Heap
+        (Capacity  => Total,
+         First_Key => -16,
+         Last_Key  => 16);
+      From  : Heaps.Bucket.Heap
+        (Capacity  => Total,
+         First_Key => -16,
+         Last_Key  => 16);
+      K     : Key_Type;
+      Prev  : Key_Type := Key_Type'First;
+   begin
+      Heaps.Bucket.Clear (Into);
+      Heaps.Bucket.Clear (From);
+      for I in 1 .. N loop
+         Heaps.Bucket.Insert (Into, Key_Type ((7 * I) mod 33) - 16);
+      end loop;
+      for I in 1 .. M loop
+         Heaps.Bucket.Insert (From, Key_Type ((11 * I) mod 33) - 16);
+      end loop;
+
+      Heaps.Bucket.Meld (Into, From);
+      Check (Heaps.Bucket.Size (Into) = Total,
+             "bucket meld: destination has every key");
+      Check (Heaps.Bucket.Is_Empty (From),
+             "bucket meld: source is empty");
+
+      for I in 1 .. N + M loop
+         Heaps.Bucket.Extract_Min (Into, K);
+         Check (K >= Prev, "bucket meld: result drains in order");
+         Prev := K;
+      end loop;
+   end Test_Bucket_Meld;
 
    procedure Test_Tournament (N : Positive);
    procedure Test_Tournament (N : Positive) is
@@ -1427,6 +1533,7 @@ begin
    --  to sweep, and what matters is only that slots go back onto the free
    --  chain and come off it again.
    for N of Churn_Sizes loop
+      Test_Bucket_Churn (N);
       Leftist_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
@@ -1436,6 +1543,7 @@ begin
       Test_Binary (N);
       Test_Tournament (N);
       Test_Block_Min (N);
+      Test_Bucket (N);
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
@@ -1474,6 +1582,13 @@ begin
    Test_Sorted_Linked_Meld (64, 0);
    Test_Sorted_Linked_Meld (0, 64);
    Test_Sorted_Linked_Meld (0, 0);
+
+   Test_Bucket_Meld (64, 64);
+   Test_Bucket_Meld (64, 1);
+   Test_Bucket_Meld (1, 64);
+   Test_Bucket_Meld (64, 0);
+   Test_Bucket_Meld (0, 64);
+   Test_Bucket_Meld (0, 0);
 
    --  The arena's own meld, over the same shapes, plus a k-way fold: with
    --  one pool holding every operand, folding k trees into one is the

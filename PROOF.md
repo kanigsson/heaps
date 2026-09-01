@@ -6,6 +6,15 @@ proofs are largely mechanical. The leftist heap is the first one with an
 explicit tree in a node pool, and it took roughly as long as the other six
 together. These are the lessons from it, written down while they were fresh.
 
+`Heaps.Bucket` uses a dense key prefix for the common multiset model and a
+linked chain per integer priority. Chain lengths are local certificates: they
+decrease by one along `Next`, agree with the bucket count at the head, and make
+cycles and detached components impossible without recursive reachability.
+The sum of all bucket counts is a recursive ghost total equal to `Last`; this
+both connects the directory to the dense prefix cardinality and bounds count
+arithmetic. Extraction proves node compaction by separating the moved node,
+its two neighbours, and the new bucket head from the unchanged frame.
+
 The sections up to *What it added up to* are about `Heaps.Leftist`, the unit
 whose `Heap` object owns its pool and holds one tree. The sections after it are
 about `Heaps.Leftist_Arena`, which puts several trees in one shared pool so

@@ -18,6 +18,7 @@ Verified priority queues backed by arrays.
 | Skew heap           | As the leftist heap with no rank field          | `O(log n)`†  | `O(log n)`†    |
 | Pairing heap        | Multiway tree, child and sibling links          | `O(1)`       | `O(log n)`†    |
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
+| Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
 | Unsorted array      | Baseline                                        | `O(1)`       | `O(n)`         |
 | Sorted array        | Baseline                                        | `O(n)`       | `O(1)`         |
 | Sorted linked list  | Doubly linked nodes in an array-backed pool     | `O(n)`       | `O(1)`         |
@@ -93,7 +94,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 ### Integer-key queues
 
-- Bucket queue
 - Radix heap
 - Bitmapped heap
 - Hierarchical bitmap queue
