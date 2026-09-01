@@ -11,6 +11,7 @@ Verified priority queues backed by arrays.
 | d-ary heap          | Configurable arity                              | `O(log_d n)` | `O(d log_d n)` |
 | Weak heap           | One flip bit per node, half the comparisons     | `O(log n)`   | `O(log n)`     |
 | Min-max heap        | Double-ended queue                              | `O(log n)`   | `O(log n)`     |
+| Min-max tournament  | Cached extrema at every internal node           | `O(log n)`   | `O(log n)`     |
 | Interval heap       | Double-ended, two keys per node                 | `O(log n)`   | `O(log n)`     |
 | Beap                | Triangular layers, two parents per node         | `O(√n)`      | `O(√n)`        |
 | Leftist heap        | Mergeable, explicit tree in a shared node arena | `O(log n)`   | `O(log n)`     |
@@ -42,19 +43,20 @@ From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
 Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
-open-proved     0.74  ██████
-open-buffered   0.91  ███████
+open-proved     0.73  ██████
+open-buffered   0.90  ███████
 binary          1.00  ████████
 8-ary           1.63  █████████████
-4-ary           1.63  █████████████
-16-ary          1.74  ██████████████
-min-max         2.13  █████████████████
-weak            2.26  ██████████████████
-pairing         2.31  ██████████████████
+4-ary           1.64  █████████████
+16-ary          1.73  ██████████████
+min-max         2.09  █████████████████
+pairing         2.19  ██████████████████
+weak            2.23  ██████████████████
 interval        2.67  █████████████████████
-skew            7.02  ████████████████████████████████████████████████████████
-leftist         7.62  █████████████████████████████████████████████████████████████
+skew            7.00  ████████████████████████████████████████████████████████
+leftist         7.42  ███████████████████████████████████████████████████████████
 tournament      9.07  ████████████████████████████████████████████████████████████████+
+min-max tourn.  14.33 ████████████████████████████████████████████████████████████████+
 ```
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
@@ -78,10 +80,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 
 ## Planned
-
-### Array-backed selection structures
-
-- Min-max tournament tree
 
 ### Array-backed node pools
 

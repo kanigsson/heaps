@@ -24,6 +24,7 @@ with Bench.Dary_16;
 with Bench.Interval_Heap;
 with Bench.Leftist_Heap;
 with Bench.Min_Max_Heap;
+with Bench.Min_Max_Tournament_Heap;
 with Bench.Open_Heap;
 with Bench.Open_Proved_Heap;
 with Bench.Pairing_Heap;
@@ -82,6 +83,7 @@ begin
    Bench.Skew_Heap.Runner.Run (Sizes);
    Bench.Pairing_Heap.Runner.Run (Sizes);
    Bench.Min_Max_Heap.Runner.Run (Sizes);
+   Bench.Min_Max_Tournament_Heap.Runner.Run (Sizes);
    Bench.Interval_Heap.Runner.Run (Sizes);
    Bench.Open_Heap.Runner.Run (Sizes);
    Bench.Open_Proved_Heap.Runner.Run (Sizes);
@@ -97,6 +99,7 @@ begin
    Bench.Dary_16.Meld_Runner.Run (Sizes);
    Bench.Weak_Heap.Meld_Runner.Run (Sizes);
    Bench.Min_Max_Heap.Meld_Runner.Run (Sizes);
+   Bench.Min_Max_Tournament_Heap.Meld_Runner.Run (Sizes);
    Bench.Interval_Heap.Meld_Runner.Run (Sizes);
    Bench.Open_Heap.Meld_Runner.Run (Sizes);
    Bench.Open_Proved_Heap.Meld_Runner.Run (Sizes);
@@ -109,6 +112,7 @@ begin
    Bench.Pairing_Heap.Meld_Runner.Run (Sizes);
 
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
+   Bench.Min_Max_Tournament_Heap.Deque_Runner.Run (Sizes);
    Bench.Interval_Heap.Deque_Runner.Run (Sizes);
    Bench.Open_Heap.Deque_Runner.Run (Sizes);
    Bench.Open_Proved_Heap.Deque_Runner.Run (Sizes);

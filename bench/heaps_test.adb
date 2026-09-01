@@ -17,6 +17,7 @@ with Heaps.Dary;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
+with Heaps.Min_Max_Tournament;
 with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
 with Heaps.Skew_Pool;
@@ -466,6 +467,57 @@ procedure Heaps_Test is
       Check (Sum = Back, "min-max: nothing lost on the way");
    end Test_Min_Max;
 
+   procedure Test_Min_Max_Tournament (N : Positive);
+   procedure Test_Min_Max_Tournament (N : Positive) is
+      H     : Heaps.Min_Max_Tournament.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Low   : Key_Type := Key_Type'First;
+      High  : Key_Type := Key_Type'Last;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Min_Max_Tournament.Insert (H, K);
+         Check (Heaps.Min_Max_Tournament.Size (H) = I,
+                "min-max tournament: size after insert");
+         Check (Heaps.Min_Max_Tournament.Peek_Min (H)
+                  = Heaps.Min_Max_Tournament.Min_Of (H),
+                "min-max tournament: peek-min agrees with the array minimum");
+         Check (Heaps.Min_Max_Tournament.Peek_Max (H)
+                  = Heaps.Min_Max_Tournament.Max_Of (H),
+                "min-max tournament: peek-max agrees with the array maximum");
+      end loop;
+
+      --  Take the keys out from the outside in: the two ends have to meet in
+      --  the middle, which checks both sift directions at once.
+
+      for I in 1 .. N loop
+         if I mod 2 = 1 then
+            Heaps.Min_Max_Tournament.Extract_Min (H, K);
+            Check (K >= Low,
+                   "min-max tournament: the low end never goes back down");
+            Low := K;
+         else
+            Heaps.Min_Max_Tournament.Extract_Max (H, K);
+            Check (K <= High,
+                   "min-max tournament: the high end never goes back up");
+            High := K;
+         end if;
+
+         Check (Low <= High,
+                "min-max tournament: the two ends have not crossed");
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Min_Max_Tournament.Is_Empty (H),
+             "min-max tournament: empty after draining");
+      Check (Sum = Back, "min-max tournament: nothing lost on the way");
+   end Test_Min_Max_Tournament;
+
    procedure Test_Interval (N : Positive);
    procedure Test_Interval (N : Positive) is
       H     : Heaps.Interval.Heap (Extended_Index (N));
@@ -618,6 +670,8 @@ procedure Heaps_Test is
       B_From : Heaps.Binary.Heap (Extended_Index (Total));
       T_Into : Heaps.Tournament.Heap (Extended_Index (Total));
       T_From : Heaps.Tournament.Heap (Extended_Index (Total));
+      X_Into : Heaps.Min_Max_Tournament.Heap (Extended_Index (Total));
+      X_From : Heaps.Min_Max_Tournament.Heap (Extended_Index (Total));
       D_Into : Heaps.Dary.Heap (Extended_Index (Total), Arity);
       D_From : Heaps.Dary.Heap (Extended_Index (Total), Arity);
       C_Into : Heaps.Block_Min.Heap
@@ -653,6 +707,7 @@ procedure Heaps_Test is
       A_Key : Key_Type;
       B_Key : Key_Type;
       T_Key : Key_Type;
+      X_Key : Key_Type;
       D_Key : Key_Type;
       C_Key : Key_Type;
       W_Key : Key_Type;
@@ -679,6 +734,7 @@ procedure Heaps_Test is
                Heaps.Unsorted.Insert (A_Into, K);
                Heaps.Binary.Insert (B_Into, K);
                Heaps.Tournament.Insert (T_Into, K);
+               Heaps.Min_Max_Tournament.Insert (X_Into, K);
                Heaps.Dary.Insert (D_Into, K);
                Heaps.Block_Min.Insert (C_Into, K);
                Heaps.Weak.Insert (W_Into, K);
@@ -693,6 +749,7 @@ procedure Heaps_Test is
                Heaps.Unsorted.Insert (A_From, K);
                Heaps.Binary.Insert (B_From, K);
                Heaps.Tournament.Insert (T_From, K);
+               Heaps.Min_Max_Tournament.Insert (X_From, K);
                Heaps.Dary.Insert (D_From, K);
                Heaps.Block_Min.Insert (C_From, K);
                Heaps.Weak.Insert (W_From, K);
@@ -720,6 +777,7 @@ procedure Heaps_Test is
       Heaps.Unsorted.Meld (A_Into, A_From);
       Heaps.Binary.Meld (B_Into, B_From);
       Heaps.Tournament.Meld (T_Into, T_From);
+      Heaps.Min_Max_Tournament.Meld (X_Into, X_From);
       Heaps.Dary.Meld (D_Into, D_From);
       Heaps.Block_Min.Meld (C_Into, C_From);
       Heaps.Weak.Meld (W_Into, W_From);
@@ -743,6 +801,10 @@ procedure Heaps_Test is
              "meld: tournament size is the sum");
       Check (Heaps.Tournament.Is_Empty (T_From),
              "meld: tournament source is emptied");
+      Check (Heaps.Min_Max_Tournament.Size (X_Into) = Total,
+             "meld: min-max tournament size is the sum");
+      Check (Heaps.Min_Max_Tournament.Is_Empty (X_From),
+             "meld: min-max tournament source is emptied");
       Check (Heaps.Dary.Size (D_Into) = Total, "meld: d-ary size is the sum");
       Check (Heaps.Dary.Is_Empty (D_From), "meld: d-ary source is emptied");
       Check (Heaps.Block_Min.Size (C_Into) = Total,
@@ -798,6 +860,12 @@ procedure Heaps_Test is
          Check (Heaps.Tournament.Peek_Min (T_Into)
                   = Heaps.Tournament.Min_Of (T_Into),
                 "meld: tournament root agrees with the array minimum");
+         Check (Heaps.Min_Max_Tournament.Peek_Min (X_Into)
+                  = Heaps.Min_Max_Tournament.Min_Of (X_Into),
+                "meld: min-max tournament minimum is current");
+         Check (Heaps.Min_Max_Tournament.Peek_Max (X_Into)
+                  = Heaps.Min_Max_Tournament.Max_Of (X_Into),
+                "meld: min-max tournament maximum is current");
 
          Check (Heaps.Dary.Peek_Min (D_Into) = Heaps.Dary.Min_Of (D_Into),
                 "meld: d-ary peek agrees with the array minimum");
@@ -819,6 +887,7 @@ procedure Heaps_Test is
          Heaps.Unsorted.Extract_Min (A_Into, A_Key);
          Heaps.Binary.Extract_Min (B_Into, B_Key);
          Heaps.Tournament.Extract_Min (T_Into, T_Key);
+         Heaps.Min_Max_Tournament.Extract_Min (X_Into, X_Key);
          Heaps.Dary.Extract_Min (D_Into, D_Key);
          Heaps.Block_Min.Extract_Min (C_Into, C_Key);
          Heaps.Weak.Extract_Min (W_Into, W_Key);
@@ -834,6 +903,8 @@ procedure Heaps_Test is
          Check (B_Key = Oracle (I), "meld: binary drain matches the oracle");
          Check (T_Key = Oracle (I),
                 "meld: tournament drain matches the oracle");
+         Check (X_Key = Oracle (I),
+                "meld: min-max tournament drain matches the oracle");
          Check (D_Key = Oracle (I), "meld: d-ary drain matches the oracle");
          Check (C_Key = Oracle (I),
                 "meld: block-min drain matches the oracle");
@@ -846,7 +917,7 @@ procedure Heaps_Test is
          Check (Q_Key = Oracle (I), "meld: skew drain matches the oracle");
          Check (G_Key = Oracle (I),
                 "meld: pairing drain matches the oracle");
-         Check (A_Key = B_Key and A_Key = T_Key
+         Check (A_Key = B_Key and A_Key = T_Key and A_Key = X_Key
                 and A_Key = D_Key and A_Key = C_Key
                 and A_Key = W_Key and A_Key = M_Key and A_Key = V_Key
                 and A_Key = P_Key and A_Key = S_Key and A_Key = L_Key
@@ -862,6 +933,8 @@ procedure Heaps_Test is
              "meld: binary empty after draining");
       Check (Heaps.Tournament.Is_Empty (T_Into),
              "meld: tournament empty after draining");
+      Check (Heaps.Min_Max_Tournament.Is_Empty (X_Into),
+             "meld: min-max tournament empty after draining");
       Check (Heaps.Beap.Is_Empty (P_Into), "meld: beap empty after draining");
       Check (Heaps.Sorted.Is_Empty (S_Into),
              "meld: sorted empty after draining");
@@ -1293,6 +1366,7 @@ begin
       Pairing_Suite.Test_Arena (N);
       Test_Beap (N);
       Test_Min_Max (N);
+      Test_Min_Max_Tournament (N);
       Test_Interval (N);
       Test_Open_Proved (N);
       for Arity in Heaps.Dary.Arity_Type range 2 .. 5 loop
