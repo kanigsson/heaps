@@ -19,7 +19,7 @@ Verified priority queues backed by arrays.
 | Pairing heap        | Multiway tree, child and sibling links          | `O(1)`       | `O(log n)`†    |
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
 | Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
-| Radix heap          | Monotone keys, dense bucket tags                | `O(log U)`   | `O(n log U)`   |
+| Radix heap          | Monotone keys, one array run per bucket         | `O(log U)`   | `O(log² U)`†   |
 | Unsorted array      | Baseline                                        | `O(1)`       | `O(n)`         |
 | Sorted array        | Baseline                                        | `O(n)`       | `O(1)`         |
 | Sorted linked list  | Doubly linked nodes in an array-backed pool     | `O(n)`       | `O(1)`         |
@@ -46,28 +46,27 @@ From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
 Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
-open-proved     0.75  ██████
-open-buffered   0.90  ███████
+open-proved     0.76  ██████
+open-buffered   0.92  ███████
 binary          1.00  ████████
-4-ary           1.59  █████████████
-8-ary           1.62  █████████████
-16-ary          1.73  ██████████████
-min-max         2.11  █████████████████
-pairing         2.22  ██████████████████
-weak            2.25  ██████████████████
-interval        2.76  ██████████████████████
-skew            6.83  ███████████████████████████████████████████████████████
-leftist         7.09  █████████████████████████████████████████████████████████
-tournament      8.84  ████████████████████████████████████████████████████████████████+
-min-max tourn.  14.61 ████████████████████████████████████████████████████████████████+
+4-ary           1.63  █████████████
+8-ary           1.68  █████████████
+16-ary          1.78  ██████████████
+min-max         2.13  █████████████████
+pairing         2.16  █████████████████
+weak            2.36  ███████████████████
+interval        2.67  █████████████████████
+skew            7.01  ████████████████████████████████████████████████████████
+leftist         7.15  █████████████████████████████████████████████████████████
+tournament      9.00  ████████████████████████████████████████████████████████████████+
+min-max tourn.  15.04 ████████████████████████████████████████████████████████████████+
 ```
 
 The radix heap is not in that aggregate: unconstrained churn can insert below
-its last extracted key. On the compatible `n = 10 000` workloads it measured
-8.68 ns per insertion, 35,960.88 ns per drained key, and 38,152.47 ns per
-replace-forward operation. The dense representation fully redistributes its
-bucket tags after extraction, so it is a proof-oriented baseline rather than
-the linked-bucket radix heap's usual performance profile.
+its last extracted key, so it runs only the monotone scenarios. Its cost per
+operation is bounded by the key range and not by `n`, which the measurements
+bear out — over three decades of size a drained key goes from 170.21 ns to
+232.40 ns, and an inserted one from 22.63 ns to 17.73 ns.
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
 the [interactive charts](https://kanigsson.github.io/heaps/) plot the same

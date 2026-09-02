@@ -15,6 +15,33 @@ both connects the directory to the dense prefix cardinality and bounds count
 arithmetic. Extraction proves node compaction by separating the moved node,
 its two neighbours, and the new bucket head from the unchanged frame.
 
+`Heaps.Radix` keeps its bucket boundaries as state rather than deriving them
+from the base, and lays the buckets out as contiguous runs of the dense key
+array. Both choices are what make the proof flat. Membership in a bucket is a
+range property, so the completeness of a bucket -- that it holds *every* key
+in its range -- is free, where a linked chain would have made it a reachability
+argument and the counting argument behind it a cardinality proof. Extraction
+splits into three subprograms with an explicit predicate between them: the
+buckets at and below the emptied one are merged into a single run whose keys
+are known only to lie between the new base and that bucket's upper boundary,
+while everything above is untouched. Proving them as one subprogram put the
+solvers over their time limit on the loop invariants; splitting them at that
+predicate discharged the same obligations at level 4 without new hints.
+
+Redistribution partitions the run one bucket at a time, front to back. Written
+that way each pass needs a single comparison per key, because what is still
+unplaced is already known to sit above the previous bucket's boundary, and the
+placed prefix is described by the delimiters the pass has already assigned. An
+in-place counting sort would move each key once instead of once per pass, but
+its correctness rests on the bucket counts being exact, which is the
+cardinality argument the run layout was chosen to avoid.
+
+The two orderings the invariant needs -- of the run delimiters and of the
+boundaries -- are stated over every pair rather than over adjacent ones,
+because the pairwise form is what the minimum argument uses. Each update
+establishes the adjacent form, which is what its pointwise description gives
+directly, and one lemma lifts it.
+
 The sections up to *What it added up to* are about `Heaps.Leftist`, the unit
 whose `Heap` object owns its pool and holds one tree. The sections after it are
 about `Heaps.Leftist_Arena`, which puts several trees in one shared pool so

@@ -317,23 +317,46 @@ procedure Heaps_Test is
 
    procedure Test_Radix_Buckets;
    procedure Test_Radix_Buckets is
+      H     : Heaps.Radix.Heap (8);
       Power : Key_Type := 1;
+      K     : Key_Type;
    begin
-      Check (Heaps.Radix.Bucket_Of (0, 0) = 0,
-             "radix: base key is in bucket zero");
+      Heaps.Radix.Clear (H);
+      Check (Heaps.Radix.Bucket_For (H, 0) = 0,
+             "radix: the base key is in bucket zero");
+
       for B in 1 .. Heaps.Radix.Bucket_Index'Last loop
-         Check (Heaps.Radix.Bucket_Of (Power, 0) = B,
+         Check (Heaps.Radix.Bucket_For (H, Power) = B,
                 "radix: powers of two start the expected bucket");
-         Check (Heaps.Radix.Bucket_Of (100 + Power, 100) = B,
-                "radix: bucket boundaries are relative to the base");
          if Power > 1 then
-            Check (Heaps.Radix.Bucket_Of (Power - 1, 0) = B - 1,
+            Check (Heaps.Radix.Bucket_For (H, Power - 1) = B - 1,
                    "radix: powers of two end the preceding bucket");
          end if;
          if B < Heaps.Radix.Bucket_Index'Last then
             Power := 2 * Power;
          end if;
       end loop;
+
+      --  The boundaries are state: extracting rebases the buckets below the
+      --  one it empties, and leaves the ones above it alone.
+
+      Heaps.Radix.Clear (H);
+      Heaps.Radix.Insert (H, 100);
+      Heaps.Radix.Insert (H, 101);
+      Heaps.Radix.Insert (H, 140);
+      Heaps.Radix.Extract_Min (H, K);
+      Check (K = 100 and then H.Base = 100,
+             "radix: extraction advances the base to the minimum");
+      Check (Heaps.Radix.Bucket_For (H, 100) = 0,
+             "radix: the new base is in bucket zero");
+      Check (Heaps.Radix.Bucket_For (H, 101) = 1,
+             "radix: the bucket below the emptied one is rebased");
+      Check (Heaps.Radix.Bucket_For (H, 102) = 2,
+             "radix: and so is the one below that");
+      Heaps.Radix.Extract_Min (H, K);
+      Check (K = 101, "radix: the rebased buckets still drain in order");
+      Heaps.Radix.Extract_Min (H, K);
+      Check (K = 140, "radix: and so does the bucket left alone");
    end Test_Radix_Buckets;
 
    procedure Test_Radix (N : Positive) is
