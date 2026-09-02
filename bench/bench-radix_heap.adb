@@ -1,0 +1,58 @@
+--
+--  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+--
+
+with Heaps.Radix;
+
+package body Bench.Radix_Heap is
+
+   H : Heaps.Radix.Heap (Heaps.Extended_Index (Max_Elements));
+
+   procedure Reset is
+   begin
+      Heaps.Radix.Clear (H);
+   end Reset;
+
+   procedure Insert (K : Key_Type) is
+   begin
+      Heaps.Radix.Insert (H, K);
+   end Insert;
+
+   procedure Extract_Min (K : out Key_Type) is
+   begin
+      Heaps.Radix.Extract_Min (H, K);
+   end Extract_Min;
+
+   Acc : Heaps.Radix.Heap (Heaps.Extended_Index (Max_Elements));
+   Ops : array (1 .. Meld_Runner.Operands) of
+           Heaps.Radix.Heap
+             (Heaps.Extended_Index (Max_Elements / Meld_Runner.Operands));
+
+   procedure Meld_Reset is
+   begin
+      Heaps.Radix.Clear (Acc);
+      for W in Ops'Range loop
+         Heaps.Radix.Clear (Ops (W));
+      end loop;
+   end Meld_Reset;
+
+   procedure Meld_Insert (Which : Natural; K : Key_Type) is
+   begin
+      if Which = 0 then
+         Heaps.Radix.Insert (Acc, K);
+      else
+         Heaps.Radix.Insert (Ops (Which), K);
+      end if;
+   end Meld_Insert;
+
+   procedure Meld_Meld (Which : Positive) is
+   begin
+      Heaps.Radix.Meld (Acc, Ops (Which));
+   end Meld_Meld;
+
+   procedure Meld_Extract_Min (K : out Key_Type) is
+   begin
+      Heaps.Radix.Extract_Min (Acc, K);
+   end Meld_Extract_Min;
+
+end Bench.Radix_Heap;

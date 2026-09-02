@@ -208,29 +208,31 @@ package body Bench.Driver is
       for N of Sizes loop
          if N <= Max_Elements then
             for S in Scenario loop
-               declare
-                  Best : Measure := Measure_Of (S, N);
-               begin
-                  --  Keep the fastest run: the minimum is far more stable
-                  --  than the mean under scheduling noise.
-                  for R in 2 .. Reps loop
-                     declare
-                        M : constant Measure := Measure_Of (S, N);
-                     begin
-                        if M.Elapsed < Best.Elapsed then
-                           Best := M;
-                        end if;
-                     end;
-                  end loop;
+               if Include_Churn or else S /= S_Churn then
+                  declare
+                     Best : Measure := Measure_Of (S, N);
+                  begin
+                     --  Keep the fastest run: the minimum is far more stable
+                     --  than the mean under scheduling noise.
+                     for R in 2 .. Reps loop
+                        declare
+                           M : constant Measure := Measure_Of (S, N);
+                        begin
+                           if M.Elapsed < Best.Elapsed then
+                              Best := M;
+                           end if;
+                        end;
+                     end loop;
 
-                  Print_Row
-                    (Heap_Name => Heap_Name,
-                     Scenario  => Label (S),
-                     N         => N,
-                     Seconds   => To_Duration (Best.Elapsed),
-                     Ops       => Best.Ops,
-                     Checksum  => Best.Checksum);
-               end;
+                     Print_Row
+                       (Heap_Name => Heap_Name,
+                        Scenario  => Label (S),
+                        N         => N,
+                        Seconds   => To_Duration (Best.Elapsed),
+                        Ops       => Best.Ops,
+                        Checksum  => Best.Checksum);
+                  end;
+               end if;
             end loop;
          end if;
       end loop;

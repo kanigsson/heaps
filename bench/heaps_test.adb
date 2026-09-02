@@ -21,6 +21,7 @@ with Heaps.Min_Max;
 with Heaps.Min_Max_Tournament;
 with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
+with Heaps.Radix;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
 with Heaps.Sorted_Linked;
@@ -311,6 +312,145 @@ procedure Heaps_Test is
          Prev := K;
       end loop;
    end Test_Bucket_Meld;
+
+   procedure Test_Radix (N : Positive);
+
+   procedure Test_Radix_Buckets;
+   procedure Test_Radix_Buckets is
+      Power : Key_Type := 1;
+   begin
+      Check (Heaps.Radix.Bucket_Of (0, 0) = 0,
+             "radix: base key is in bucket zero");
+      for B in 1 .. Heaps.Radix.Bucket_Index'Last loop
+         Check (Heaps.Radix.Bucket_Of (Power, 0) = B,
+                "radix: powers of two start the expected bucket");
+         Check (Heaps.Radix.Bucket_Of (100 + Power, 100) = B,
+                "radix: bucket boundaries are relative to the base");
+         if Power > 1 then
+            Check (Heaps.Radix.Bucket_Of (Power - 1, 0) = B - 1,
+                   "radix: powers of two end the preceding bucket");
+         end if;
+         if B < Heaps.Radix.Bucket_Index'Last then
+            Power := 2 * Power;
+         end if;
+      end loop;
+   end Test_Radix_Buckets;
+
+   procedure Test_Radix (N : Positive) is
+      H     : Heaps.Radix.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 987_654_321;
+      K     : Key_Type;
+      Prev  : Key_Type := 0;
+      Sum   : Long_Long_Integer := 0;
+      Back  : Long_Long_Integer := 0;
+   begin
+      Heaps.Radix.Clear (H);
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         K := Key_Type (State mod 100_000);
+         Sum := Sum + Long_Long_Integer (K);
+         Heaps.Radix.Insert (H, K);
+         Check (Heaps.Radix.Size (H) = I,
+                "radix: size after insert");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Radix.Extract_Min (H, K);
+         Check (K >= Prev,
+                "radix: keys come out in non-decreasing order");
+         Check (H.Base = K, "radix: extraction advances the base");
+         Prev := K;
+         Back := Back + Long_Long_Integer (K);
+      end loop;
+
+      Check (Heaps.Radix.Is_Empty (H),
+             "radix: empty after draining");
+      Check (Sum = Back, "radix: nothing lost on the way");
+   end Test_Radix;
+
+   procedure Test_Radix_Churn (N : Positive);
+   procedure Test_Radix_Churn (N : Positive) is
+      H     : Heaps.Radix.Heap (Extended_Index (N));
+      State : Long_Long_Integer := 24_680;
+      K     : Key_Type;
+      Prev  : Key_Type := 0;
+   begin
+      Heaps.Radix.Clear (H);
+      for I in 1 .. N loop
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Radix.Insert (H, Key_Type (State mod 1_000));
+      end loop;
+
+      for I in 1 .. 4 * N loop
+         Heaps.Radix.Extract_Min (H, K);
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         Heaps.Radix.Insert (H, K + 1 + Key_Type (State mod 1_000));
+         Check (Heaps.Radix.Size (H) = N,
+                "radix: monotone churn preserves size");
+      end loop;
+
+      for I in 1 .. N loop
+         Heaps.Radix.Extract_Min (H, K);
+         Check (K >= Prev, "radix: churned queue drains in order");
+         Prev := K;
+      end loop;
+   end Test_Radix_Churn;
+
+   procedure Test_Radix_Meld (N, M : Natural);
+   procedure Test_Radix_Meld (N, M : Natural) is
+      Total : constant Extended_Index := Extended_Index (N + M);
+      Into  : Heaps.Radix.Heap (Total);
+      From  : Heaps.Radix.Heap (Total);
+      K     : Key_Type;
+      Prev  : Key_Type := 0;
+   begin
+      Heaps.Radix.Clear (Into);
+      Heaps.Radix.Clear (From);
+      for I in 1 .. N loop
+         Heaps.Radix.Insert (Into, Key_Type ((7 * I) mod 100_001));
+      end loop;
+      for I in 1 .. M loop
+         Heaps.Radix.Insert (From, Key_Type ((11 * I) mod 100_001));
+      end loop;
+
+      Heaps.Radix.Meld (Into, From);
+      Check (Heaps.Radix.Size (Into) = Total,
+             "radix meld: destination has every key");
+      Check (Heaps.Radix.Is_Empty (From),
+             "radix meld: source is empty");
+
+      for I in 1 .. N + M loop
+         Heaps.Radix.Extract_Min (Into, K);
+         Check (K >= Prev, "radix meld: result drains in order");
+         Prev := K;
+      end loop;
+   end Test_Radix_Meld;
+
+   procedure Test_Radix_Advanced_Meld;
+   procedure Test_Radix_Advanced_Meld is
+      Into : Heaps.Radix.Heap (4);
+      From : Heaps.Radix.Heap (4);
+      K    : Key_Type;
+   begin
+      Heaps.Radix.Clear (Into);
+      Heaps.Radix.Clear (From);
+      Heaps.Radix.Insert (Into, 5);
+      Heaps.Radix.Insert (Into, 10);
+      Heaps.Radix.Extract_Min (Into, K);
+      Check (K = 5 and then Into.Base = 5,
+             "radix meld: destination base was advanced");
+
+      Heaps.Radix.Insert (From, 7);
+      Heaps.Radix.Insert (From, 8);
+      Heaps.Radix.Meld (Into, From);
+      for Expected in 7 .. 10 loop
+         if Expected /= 9 then
+            Heaps.Radix.Extract_Min (Into, K);
+            Check (K = Key_Type (Expected),
+                   "radix meld: compatible keys cross a lower source base");
+         end if;
+      end loop;
+   end Test_Radix_Advanced_Meld;
 
    procedure Test_Tournament (N : Positive);
    procedure Test_Tournament (N : Positive) is
@@ -1509,6 +1649,9 @@ procedure Heaps_Test is
       Meld        => Pair_Arena.Meld);
 
 begin
+   Test_Radix_Buckets;
+   Test_Radix_Advanced_Meld;
+
    for Activate_Into in Boolean loop
       for Activate_From in Boolean loop
          Test_Open_Proved_Meld (Activate_Into, Activate_From);
@@ -1534,6 +1677,7 @@ begin
    --  chain and come off it again.
    for N of Churn_Sizes loop
       Test_Bucket_Churn (N);
+      Test_Radix_Churn (N);
       Leftist_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
@@ -1544,6 +1688,7 @@ begin
       Test_Tournament (N);
       Test_Block_Min (N);
       Test_Bucket (N);
+      Test_Radix (N);
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
@@ -1589,6 +1734,13 @@ begin
    Test_Bucket_Meld (64, 0);
    Test_Bucket_Meld (0, 64);
    Test_Bucket_Meld (0, 0);
+
+   Test_Radix_Meld (64, 64);
+   Test_Radix_Meld (64, 1);
+   Test_Radix_Meld (1, 64);
+   Test_Radix_Meld (64, 0);
+   Test_Radix_Meld (0, 64);
+   Test_Radix_Meld (0, 0);
 
    --  The arena's own meld, over the same shapes, plus a k-way fold: with
    --  one pool holding every operand, folding k trees into one is the

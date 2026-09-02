@@ -28,6 +28,7 @@ with Bench.Min_Max_Tournament_Heap;
 with Bench.Open_Heap;
 with Bench.Open_Proved_Heap;
 with Bench.Pairing_Heap;
+with Bench.Radix_Heap;
 with Bench.Skew_Heap;
 with Bench.Sorted_Heap;
 with Bench.Sorted_Linked_Heap;
@@ -92,6 +93,7 @@ begin
    Bench.Sorted_Heap.Runner.Run (Baseline_Sizes);
    Bench.Sorted_Linked_Heap.Runner.Run (Baseline_Sizes);
    Bench.Unsorted_Heap.Runner.Run (Baseline_Sizes);
+   Bench.Radix_Heap.Runner.Run (Baseline_Sizes);
 
    --  Meld, each entry over the sizes its own worst operation can afford.
    Bench.Binary_Heap.Meld_Runner.Run (Sizes);
@@ -113,6 +115,7 @@ begin
    Bench.Leftist_Heap.Meld_Runner.Run (Sizes);
    Bench.Skew_Heap.Meld_Runner.Run (Sizes);
    Bench.Pairing_Heap.Meld_Runner.Run (Sizes);
+   Bench.Radix_Heap.Meld_Runner.Run (Baseline_Sizes);
 
    Bench.Min_Max_Heap.Deque_Runner.Run (Sizes);
    Bench.Min_Max_Tournament_Heap.Deque_Runner.Run (Sizes);
