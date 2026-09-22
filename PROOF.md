@@ -1,5 +1,49 @@
 # Proof notes
 
+## Binomial heap
+
+`Heaps.Binomial` keeps both roots and children in decreasing rank order.
+`Parent` identifies the incoming binary link, either from a first-child link
+or from the preceding sibling. A node caches the size and ghost multiset of
+itself, its descendants, and its sibling suffix. Its child forest contains
+exactly `2**Rank - 1` nodes; child and sibling ranks decrease. Backlinks and
+decreasing sizes exclude shared children and cycles.
+
+`Split`, `Prepend`, and `Link_Equal` each preserve a valid forest. Merge
+recurses on smaller ranks, then resolves any carry with one equal-rank link.
+Extraction selects the minimum once, removes its root, merges the children
+with the remaining suffix, and restores the larger-rank prefix. Rank-based
+variants prove termination and bound the executable traversals to 25 levels.
+Insertion, extraction, and destructive meld preserve the exact key multiset
+and the roots and models of other heaps in the arena.
+
+A ghost sum of all root sizes plus the free count equals the capacity.
+Local operations change at most two contributions; a prefix induction proves
+the change to the total. This derives insertion's size bound from `Room >= 1`
+without adding a size precondition. The exponential rank weight is hidden
+from structural verification conditions; `Weight_Laws` exposes its definition
+and proves the needed ordering and doubling laws. All accounting, snapshots,
+and multiset lemmas are ghost code, erased from execution.
+
+`heaps-binomial_proof.adb` instantiates the generic with a symbolic parameter
+of type `Index`, checking every supported capacity from 1 through `2**24`.
+It needs no executable calls: GNATprove checks all instantiated bodies.
+The focused command is:
+
+```sh
+gnatprove -P heaps.gpr -j12 --level=4 -u heaps-binomial_proof.adb --report=fail
+```
+
+This discharges all 597 checks, with no assumptions or proof exemptions.
+The full project run, `gnatprove -P heaps.gpr -j12 --level=4 --report=fail`,
+discharges all 8,510 checks.
+
+The runtime suite covers drain, duplicate-key churn, balanced, lopsided and
+empty melds, preservation of a third heap, singleton reuse, and a full
+32,768-slot arena with carries through every rank.
+
+## Earlier implementations
+
 What the proofs in `src/` cost, and what made the difference. The collection's
 first six heaps are implicit -- the array index *is* the tree -- and their
 proofs are largely mechanical. The leftist heap is the first one with an

@@ -17,6 +17,7 @@ Verified priority queues backed by arrays.
 | Leftist heap        | Mergeable, explicit tree in a shared node arena | `O(log n)`   | `O(log n)`     |
 | Skew heap           | As the leftist heap with no rank field          | `O(log n)`†  | `O(log n)`†    |
 | Pairing heap        | Multiway tree, child and sibling links          | `O(1)`       | `O(log n)`†    |
+| Binomial heap       | Ranked forest in a shared node arena           | `O(log n)`   | `O(log n)`     |
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
 | Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
 | Radix heap          | Monotone keys, one array run per bucket         | `O(log U)`   | `O(log² U)`†   |
@@ -39,6 +40,8 @@ gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 ## Performance
+
+The published measurements below predate the binomial heap.
 
 From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
 
@@ -92,7 +95,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 ### Array-backed node pools
 
-- Binomial heap
 - Skew binomial heap
 - Rank-pairing heap
 - Fibonacci heap

@@ -13,6 +13,8 @@ with Heaps;       use Heaps;
 with Heaps.Beap;
 with Heaps.Binary;
 with Heaps.Block_Min;
+with Heaps.Binomial;
+with Heaps.Binomial_Pool;
 with Heaps.Bucket;
 with Heaps.Dary;
 with Heaps.Interval;
@@ -1002,6 +1004,7 @@ procedure Heaps_Test is
    --  balanced one.
 
    package Arena renames Heaps.Leftist_Pool;
+   package Binomial_Arena renames Heaps.Binomial_Pool;
    package Skew_Arena renames Heaps.Skew_Pool;
    package Pair_Arena renames Heaps.Pairing_Pool;
 
@@ -1647,6 +1650,18 @@ procedure Heaps_Test is
       Extract_Min => Arena.Extract_Min,
       Meld        => Arena.Meld);
 
+   package Binomial_Suite is new Arena_Suite
+     (Kind        => "binomial",
+      Nodes       => Binomial_Arena.Nodes,
+      Clear       => Binomial_Arena.Clear,
+      Room        => Binomial_Arena.Room,
+      Is_Empty    => Binomial_Arena.Is_Empty,
+      Size_Of     => Binomial_Arena.Size_Of,
+      Peek_Min    => Binomial_Arena.Peek_Min,
+      Insert      => Binomial_Arena.Insert,
+      Extract_Min => Binomial_Arena.Extract_Min,
+      Meld        => Binomial_Arena.Meld);
+
    package Skew_Suite is new Arena_Suite
      (Kind        => "skew",
       Nodes       => Skew_Arena.Nodes,
@@ -1671,7 +1686,55 @@ procedure Heaps_Test is
       Extract_Min => Pair_Arena.Extract_Min,
       Meld        => Pair_Arena.Meld);
 
+   procedure Test_Binomial_Boundaries is
+      pragma Unevaluated_Use_Of_Old (Allow);
+      pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
+                               Assert => Ignore, Loop_Invariant => Ignore);
+      package One is new Heaps.Binomial (Capacity => 1);
+      Single : One.Tree := 0;
+      T, U : Binomial_Arena.Tree := 0;
+      K : Key_Type;
+   begin
+      One.Clear;
+      for Pass in 1 .. 2 loop
+         One.Insert (Single, Key_Type'First);
+         Check (One.Room = 0 and then One.Size_Of (Single) = 1,
+                "binomial: singleton fills its arena");
+         One.Extract_Min (Single, K);
+         Check (K = Key_Type'First and then Single = 0 and then One.Room = 1,
+                "binomial: singleton slot can be reused");
+      end loop;
+
+      --  Fill the entire arena, then force carries through every rank.
+      Binomial_Arena.Clear;
+      for I in 1 .. Binomial_Arena.Nodes loop
+         if I < Binomial_Arena.Nodes / 2 then
+            Binomial_Arena.Insert (T, Key_Type (Binomial_Arena.Nodes - I));
+         else
+            Binomial_Arena.Insert (U, Key_Type (Binomial_Arena.Nodes - I));
+         end if;
+      end loop;
+      Check (Binomial_Arena.Room = 0, "binomial: full arena");
+      Binomial_Arena.Meld (T, U);
+      Check (U = 0 and then Binomial_Arena.Size_Of (T) = Binomial_Arena.Nodes,
+             "binomial: full arena meld");
+
+      Binomial_Arena.Extract_Min (T, K);
+      Check (K = 0 and then Binomial_Arena.Room = 1,
+             "binomial: split the highest-rank tree");
+      Binomial_Arena.Insert (T, Key_Type'Last);
+      for I in 1 .. Binomial_Arena.Nodes - 1 loop
+         Binomial_Arena.Extract_Min (T, K);
+         Check (K = Key_Type (I), "binomial: drain across rank boundaries");
+      end loop;
+      Binomial_Arena.Extract_Min (T, K);
+      Check (K = Key_Type'Last and then T = 0
+             and then Binomial_Arena.Room = Binomial_Arena.Nodes,
+             "binomial: full drain restores all slots");
+   end Test_Binomial_Boundaries;
+
 begin
+   Test_Binomial_Boundaries;
    Test_Radix_Buckets;
    Test_Radix_Advanced_Meld;
 
@@ -1702,6 +1765,7 @@ begin
       Test_Bucket_Churn (N);
       Test_Radix_Churn (N);
       Leftist_Suite.Test_Arena_Churn (N);
+      Binomial_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
    end loop;
@@ -1714,6 +1778,7 @@ begin
       Test_Radix (N);
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
+      Binomial_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
       Pairing_Suite.Test_Arena (N);
       Test_Beap (N);
@@ -1776,6 +1841,13 @@ begin
       Leftist_Suite.Test_Arena_Meld (0, N);
       Leftist_Suite.Test_Arena_KWay (N, 16);
 
+      Binomial_Suite.Test_Arena_Meld (N, N);
+      Binomial_Suite.Test_Arena_Meld (N, 1);
+      Binomial_Suite.Test_Arena_Meld (1, N);
+      Binomial_Suite.Test_Arena_Meld (N, 0);
+      Binomial_Suite.Test_Arena_Meld (0, N);
+      Binomial_Suite.Test_Arena_KWay (N, 16);
+
       Skew_Suite.Test_Arena_Meld (N, N);
       Skew_Suite.Test_Arena_Meld (N, 1);
       Skew_Suite.Test_Arena_Meld (1, N);
@@ -1793,6 +1865,8 @@ begin
 
    Leftist_Suite.Test_Arena_Meld (0, 0);
    Leftist_Suite.Test_Arena_KWay (1, 16);
+   Binomial_Suite.Test_Arena_Meld (0, 0);
+   Binomial_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);
    Skew_Suite.Test_Arena_KWay (1, 16);
    Pairing_Suite.Test_Arena_Meld (0, 0);
