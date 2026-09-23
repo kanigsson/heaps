@@ -143,13 +143,14 @@
   };
   var PICKS = {
     arrays: ["binary", "4-ary", "8-ary", "16-ary", "weak", "min-max", "interval"],
-    arenas: ["leftist", "skew", "pairing"]
+    arenas: ["leftist", "skew", "pairing", "binomial", "fibonacci"]
   };
 
   var PALETTE = [
     "#3b7dd8", "#d1495b", "#2a9d8f", "#e07a1f", "#7b5ea7", "#00838f",
     "#b5651d", "#4f772d", "#c2185b", "#5c6bc0", "#8d6e63", "#00897b",
-    "#ef6c00", "#6a1b9a", "#546e7a", "#9e9d24"
+    "#ef6c00", "#6a1b9a", "#546e7a", "#9e9d24", "#ad1457", "#0277bd",
+    "#558b2f", "#6d4c41", "#d84315", "#283593"
   ];
   var colour = {};
   heaps.forEach(function (h, i) { colour[h] = PALETTE[i % PALETTE.length]; });

@@ -1074,3 +1074,133 @@ mirror of its existing operations for the same reason.
 
 The focused `Heaps.Open_Proved` run discharges 85 checks at `--level=2`. The
 complete `--level=4` project run discharges all 4 635 checks.
+
+# The Fibonacci heap
+
+`Heaps.Fibonacci` is the fourth arena. A heap is a root list of heap-ordered
+trees whose head is the minimum. Insertion and meld concatenate root lists and
+touch no tree; extraction moves the children of the minimum onto the list,
+links trees of equal rank through a table indexed by rank, and relinks the
+survivors with the smallest root in front. The collection has no decrease-key,
+so nothing is ever cut: every tree is a binomial tree, and the clauses that
+describe a child list are the binomial unit's, unchanged.
+
+What is new is the root list, and all of what follows is about it.
+
+## A constant-time splice needs ghost membership
+
+The binomial unit caches, at every node, the model and size of the node, its
+descendants and its sibling suffix, so that the head of a list carries the
+model of the heap. That is what makes a flat invariant possible, and it is
+what a concatenation breaks: appending list B behind list A changes the suffix
+of every node of A. An executable walk to repair them would make meld linear
+in the length of A, and A is as long as the number of insertions since the
+last extraction.
+
+The repair is ghost instead. Every node of a root list records its *owner*,
+the head of its list, and the invariant says only local things about it: a
+sibling has the node's owner, and a node with no sibling is its owner's tail.
+`Append` then changes two executable links -- the old tail's sibling and the
+head's tail pointer -- and updates the ghost model and size of every node
+owned by A in one array aggregate, conditioned on the owner. The nodes of B
+change owner in a second aggregate. No list is walked, in the proof or in
+the program.
+
+The aggregate is correct for a node exactly when its sibling was updated too,
+which the owner clause gives for every node but the tail. The tail is unique
+because the invariant says so directly: any node with no sibling is its
+owner's recorded tail. That clause is the one thing the executable tail
+pointer has to carry, and it is maintained by the four subprograms that set
+the tail pointer: allocation, split, concatenation, and detaching a child.
+
+## A position where a prefix size fails
+
+Deallocating a node, or linking one root under another, needs to know that no
+other node claims the root as its owner. For a list of one node that is true,
+but nothing local says it: a node owned by H with no path from H is not
+excluded by any clause about its neighbours.
+
+The first attempt recorded, for each node, the number of nodes in the trees
+ahead of it. That settles the one-node case, but splitting the head off a list
+has to rebase every other node against the new head, and the new bound it
+needs -- that every node behind the second has at least the second's prefix --
+compares two nodes that are not adjacent. Stating that flatly needs an
+invariant over pairs, or an induction along the list.
+
+A 1-based position does not have the problem, because its steps are of one.
+The position of a sibling is one more than the node's, a node is at position
+1 exactly when it is its own owner, and no node is behind its owner's tail. A
+node that is not the head is then at position 2 or later, and at exactly 2
+only if its predecessor is at 1, that is, the head -- so it is the head's
+sibling. That is what the split needs, and it is local. A list of one node has
+its head as its tail, so every node it owns is at position 1, so is the head.
+
+The position is a `Big_Natural`. Nothing cheap bounds it: the number of trees
+on a list is bounded by the number of nodes, but relating the two is the
+non-local argument the position was introduced to avoid.
+
+One induction remains. Concatenation adds B's size to the size of every node
+of A, and the range check on that needs each of them to be no larger than A's
+head. That follows by recursion back along the parent links, decreasing the
+position, and it is the only lemma in the unit that walks a list.
+
+## Frames compare models by logical equality
+
+One level-4 run left eight checks in the extraction, all frame conditions of
+the form "this head is as it was before these two calls". The model of a head is a
+multiset, and multiset `=` is extensional: chaining two equalities inside a
+quantifier over nodes asks the prover for transitivity of a quantified
+formula, which it will not find in time.
+
+SPARKlib declares a logical equality for multisets, and the frame relation
+compares models with it. Logical equality is transitive by rewriting, so
+chaining frames across four calls went through without a hint. The contracts
+the other units see still use `=`, which a logical equality implies.
+
+## What a loop knows when it stops
+
+With the invariant at the top of a `while` body, GNATprove knows on leaving
+the loop that the invariant held at the start of the last iteration, and what
+that iteration did. It does not know the invariant of the state the loop
+leaves in. Several failures, in `Place` and in the loops of the extraction,
+were that: a frame condition proved preserved, and yet not known after the
+loop.
+
+The cure is to restate the invariant at the end of the body for the new state,
+as an assertion. The preservation check then becomes trivial, and the exit
+state has the fact.
+
+## Split the extraction where the table is the only thing passed on
+
+`Extract_Min` was first written as one subprogram with three loops. It is now
+three subprograms -- scatter the children of the minimum into the table,
+scatter the rest of its list, gather the table into a list -- each with a
+contract that states only which heads it may consume, which it leaves as they
+were, and the model of the table afterwards. This mirrors the radix heap's
+split, for the same reason: the state that passes between the phases is
+small, and describing it once in a contract is cheaper than carrying it
+through each loop's invariants.
+
+The size clause of the extraction's postcondition is not carried through the
+phases at all. It follows from the arena's accounting at the end: one node
+went back to the free list, and the only head whose size changed is the
+heap's own.
+
+## Numbers
+
+`heaps-fibonacci.adb` is 1 779 lines with 227 `Assert` and `Loop_Invariant`
+pragmas, against the binomial unit's 778 and 76. The symbolic-capacity
+instance discharges all 1 429 checks at `--level=4` in about four minutes on
+this machine, with no assumptions or exemptions:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 -u heaps-fibonacci_proof.adb --report=fail
+```
+
+The complete `--level=4` project run discharges all 10 777 checks.
+
+The runtime suite drives the unit through the shared arena suite -- fill and
+drain, churn, balanced and lopsided melds with a bystander tree, k-way folds
+-- and through a boundary test of its own: a capacity-1 arena, a full arena
+of singleton roots consolidated by one extraction, and interleaved insertion
+and extraction.

@@ -17,6 +17,8 @@ with Heaps.Binomial;
 with Heaps.Binomial_Pool;
 with Heaps.Bucket;
 with Heaps.Dary;
+with Heaps.Fibonacci;
+with Heaps.Fibonacci_Pool;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
@@ -1005,6 +1007,7 @@ procedure Heaps_Test is
 
    package Arena renames Heaps.Leftist_Pool;
    package Binomial_Arena renames Heaps.Binomial_Pool;
+   package Fibonacci_Arena renames Heaps.Fibonacci_Pool;
    package Skew_Arena renames Heaps.Skew_Pool;
    package Pair_Arena renames Heaps.Pairing_Pool;
 
@@ -1662,6 +1665,18 @@ procedure Heaps_Test is
       Extract_Min => Binomial_Arena.Extract_Min,
       Meld        => Binomial_Arena.Meld);
 
+   package Fibonacci_Suite is new Arena_Suite
+     (Kind        => "fibonacci",
+      Nodes       => Fibonacci_Arena.Nodes,
+      Clear       => Fibonacci_Arena.Clear,
+      Room        => Fibonacci_Arena.Room,
+      Is_Empty    => Fibonacci_Arena.Is_Empty,
+      Size_Of     => Fibonacci_Arena.Size_Of,
+      Peek_Min    => Fibonacci_Arena.Peek_Min,
+      Insert      => Fibonacci_Arena.Insert,
+      Extract_Min => Fibonacci_Arena.Extract_Min,
+      Meld        => Fibonacci_Arena.Meld);
+
    package Skew_Suite is new Arena_Suite
      (Kind        => "skew",
       Nodes       => Skew_Arena.Nodes,
@@ -1733,8 +1748,89 @@ procedure Heaps_Test is
              "binomial: full drain restores all slots");
    end Test_Binomial_Boundaries;
 
+   --  Insertion and meld leave every tree a singleton root until the next
+   --  extraction, so the first extraction after a fill consolidates the whole
+   --  arena through the rank table at once.
+   procedure Test_Fibonacci_Boundaries is
+      pragma Unevaluated_Use_Of_Old (Allow);
+      pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
+                               Assert => Ignore, Loop_Invariant => Ignore,
+                               Loop_Variant => Ignore);
+      package One is new Heaps.Fibonacci (Capacity => 1);
+      Single : One.Tree := 0;
+      T, U : Fibonacci_Arena.Tree := 0;
+      K : Key_Type;
+   begin
+      One.Clear;
+      for Pass in 1 .. 2 loop
+         One.Insert (Single, Key_Type'First);
+         Check (One.Room = 0 and then One.Size_Of (Single) = 1,
+                "fibonacci: singleton fills its arena");
+         One.Extract_Min (Single, K);
+         Check (K = Key_Type'First and then Single = 0 and then One.Room = 1,
+                "fibonacci: singleton slot can be reused");
+      end loop;
+
+      --  Fill the entire arena as two lists of singleton roots, the smaller
+      --  keys behind the larger ones, and splice them.
+      Fibonacci_Arena.Clear;
+      for I in 1 .. Fibonacci_Arena.Nodes loop
+         if I < Fibonacci_Arena.Nodes / 2 then
+            Fibonacci_Arena.Insert (T, Key_Type (Fibonacci_Arena.Nodes - I));
+         else
+            Fibonacci_Arena.Insert (U, Key_Type (Fibonacci_Arena.Nodes - I));
+         end if;
+      end loop;
+      Check (Fibonacci_Arena.Room = 0, "fibonacci: full arena");
+      Fibonacci_Arena.Meld (T, U);
+      Check (U = 0
+             and then Fibonacci_Arena.Size_Of (T) = Fibonacci_Arena.Nodes
+             and then Fibonacci_Arena.Peek_Min (T) = 0,
+             "fibonacci: full arena meld");
+
+      --  All but one of the roots link here, up to the highest rank.
+      Fibonacci_Arena.Extract_Min (T, K);
+      Check (K = 0 and then Fibonacci_Arena.Room = 1
+             and then Fibonacci_Arena.Size_Of (T)
+                      = Fibonacci_Arena.Nodes - 1,
+             "fibonacci: consolidate a full arena");
+      Fibonacci_Arena.Insert (T, Key_Type'Last);
+      for I in 1 .. Fibonacci_Arena.Nodes - 1 loop
+         Fibonacci_Arena.Extract_Min (T, K);
+         Check (K = Key_Type (I), "fibonacci: drain across rank boundaries");
+      end loop;
+      Fibonacci_Arena.Extract_Min (T, K);
+      Check (K = Key_Type'Last and then T = 0
+             and then Fibonacci_Arena.Room = Fibonacci_Arena.Nodes,
+             "fibonacci: full drain restores all slots");
+
+      --  Interleave: every extraction consolidates the roots the inserts
+      --  since the last one left behind, and the forest never holds two
+      --  trees of one rank afterwards.
+      for Round in 1 .. 64 loop
+         for I in 1 .. Round loop
+            Fibonacci_Arena.Insert (T, Key_Type ((Round * 7919 + I * 104_729)
+                                                 mod 1000));
+         end loop;
+         declare
+            Before : constant Key_Type := Fibonacci_Arena.Peek_Min (T);
+         begin
+            Fibonacci_Arena.Extract_Min (T, K);
+            Check (K = Before
+                   and then (T = 0 or else Fibonacci_Arena.Peek_Min (T) >= K),
+                   "fibonacci: interleaved extraction is ordered");
+         end;
+      end loop;
+      while T /= 0 loop
+         Fibonacci_Arena.Extract_Min (T, K);
+      end loop;
+      Check (Fibonacci_Arena.Room = Fibonacci_Arena.Nodes,
+             "fibonacci: interleaved churn leaked no node");
+   end Test_Fibonacci_Boundaries;
+
 begin
    Test_Binomial_Boundaries;
+   Test_Fibonacci_Boundaries;
    Test_Radix_Buckets;
    Test_Radix_Advanced_Meld;
 
@@ -1766,6 +1862,7 @@ begin
       Test_Radix_Churn (N);
       Leftist_Suite.Test_Arena_Churn (N);
       Binomial_Suite.Test_Arena_Churn (N);
+      Fibonacci_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
    end loop;
@@ -1779,6 +1876,7 @@ begin
       Test_Weak (N);
       Leftist_Suite.Test_Arena (N);
       Binomial_Suite.Test_Arena (N);
+      Fibonacci_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
       Pairing_Suite.Test_Arena (N);
       Test_Beap (N);
@@ -1848,6 +1946,13 @@ begin
       Binomial_Suite.Test_Arena_Meld (0, N);
       Binomial_Suite.Test_Arena_KWay (N, 16);
 
+      Fibonacci_Suite.Test_Arena_Meld (N, N);
+      Fibonacci_Suite.Test_Arena_Meld (N, 1);
+      Fibonacci_Suite.Test_Arena_Meld (1, N);
+      Fibonacci_Suite.Test_Arena_Meld (N, 0);
+      Fibonacci_Suite.Test_Arena_Meld (0, N);
+      Fibonacci_Suite.Test_Arena_KWay (N, 16);
+
       Skew_Suite.Test_Arena_Meld (N, N);
       Skew_Suite.Test_Arena_Meld (N, 1);
       Skew_Suite.Test_Arena_Meld (1, N);
@@ -1867,6 +1972,8 @@ begin
    Leftist_Suite.Test_Arena_KWay (1, 16);
    Binomial_Suite.Test_Arena_Meld (0, 0);
    Binomial_Suite.Test_Arena_KWay (1, 16);
+   Fibonacci_Suite.Test_Arena_Meld (0, 0);
+   Fibonacci_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);
    Skew_Suite.Test_Arena_KWay (1, 16);
    Pairing_Suite.Test_Arena_Meld (0, 0);

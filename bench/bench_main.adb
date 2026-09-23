@@ -22,6 +22,7 @@ with Bench.Block_Min_Heap;
 with Bench.Dary_4;
 with Bench.Dary_8;
 with Bench.Dary_16;
+with Bench.Fibonacci_Heap;
 with Bench.Interval_Heap;
 with Bench.Leftist_Heap;
 with Bench.Min_Max_Heap;
@@ -77,6 +78,7 @@ begin
    Bench.Print_Header;
    Bench.Binary_Heap.Runner.Run (Sizes);
    Bench.Binomial_Heap.Runner.Run (Sizes);
+   Bench.Fibonacci_Heap.Runner.Run (Sizes);
    Bench.Tournament_Heap.Runner.Run (Sizes);
    Bench.Block_Min_Heap.Runner.Run (Beap_Sizes);
    Bench.Dary_4.Runner.Run (Sizes);
@@ -100,6 +102,7 @@ begin
    --  Meld, each entry over the sizes its own worst operation can afford.
    Bench.Binary_Heap.Meld_Runner.Run (Sizes);
    Bench.Binomial_Heap.Meld_Runner.Run (Sizes);
+   Bench.Fibonacci_Heap.Meld_Runner.Run (Sizes);
    Bench.Tournament_Heap.Meld_Runner.Run (Sizes);
    Bench.Dary_4.Meld_Runner.Run (Sizes);
    Bench.Dary_8.Meld_Runner.Run (Sizes);
