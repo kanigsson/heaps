@@ -18,6 +18,7 @@ Verified priority queues backed by arrays.
 | Skew heap           | As the leftist heap with no rank field          | `O(log n)`†  | `O(log n)`†    |
 | Pairing heap        | Multiway tree, child and sibling links          | `O(1)`       | `O(log n)`†    |
 | Binomial heap       | Ranked forest in a shared node arena            | `O(log n)`   | `O(log n)`     |
+| Skew binomial heap  | Skew-linked forest, worst-case constant insert  | `O(1)`       | `O(log n)`     |
 | Fibonacci heap      | Lazy binomial forest, no decrease-key           | `O(1)`       | `O(log n)`†    |
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
 | Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
@@ -48,37 +49,49 @@ From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
 Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
-open-proved     0.75  ██████
-open-buffered   0.90  ███████
+open-proved     0.72  ██████
+open-buffered   0.87  ███████
 binary          1.00  ████████
-4-ary           1.63  █████████████
-8-ary           1.65  █████████████
-16-ary          1.77  ██████████████
-pairing         2.06  ████████████████
-fibonacci       2.12  █████████████████
-min-max         2.13  █████████████████
-weak            2.33  ███████████████████
-interval        2.65  █████████████████████
-skew            6.67  █████████████████████████████████████████████████████
-leftist         7.07  █████████████████████████████████████████████████████████
-tournament      9.32  ████████████████████████████████████████████████████████████████+
-binomial       10.33  ████████████████████████████████████████████████████████████████+
-min-max tourn.  14.69 ████████████████████████████████████████████████████████████████+
+8-ary           1.56  ████████████
+4-ary           1.56  ████████████
+16-ary          1.70  ██████████████
+min-max         2.05  ████████████████
+pairing         2.16  █████████████████
+fibonacci       2.19  ██████████████████
+weak            2.21  ██████████████████
+interval        2.60  █████████████████████
+skew binomial   5.10  █████████████████████████████████████████
+skew            6.57  █████████████████████████████████████████████████████
+leftist         7.16  █████████████████████████████████████████████████████████
+tournament      9.05  ████████████████████████████████████████████████████████████████+
+binomial        9.94  ████████████████████████████████████████████████████████████████+
+min-max tourn.  14.28 ████████████████████████████████████████████████████████████████+
 ```
 
-The Fibonacci heap defers all its work to extraction, and the measurements
-show where it goes. An insertion costs 4.1 to 4.8 ns at every size, against
-the binomial heap's 48 to 105 ns for the same trees built eagerly, and a meld
-costs at most 35 ns where the binomial heap's grows to 529 ns. A drain at
-n = 1 000 000 costs what the binomial heap's does -- 552 ns against 559 ns --
-because its first extraction links the million singleton roots the fill left
-behind.
+The three binomial forests put the work in different places. The binomial
+heap links eagerly on insertion, so an insertion costs 47 to 99 ns and grows
+with the carry chain. The Fibonacci heap defers every link to the next
+extraction: an insertion costs 4.1 to 4.9 ns at every size and a meld at most
+52 ns, where the binomial heap's meld grows to 613 ns. Its first extraction
+after a fill then links the million singleton roots, and a drain at
+n = 1 000 000 costs 684 ns against the binomial heap's 604 ns.
+
+The skew binomial heap sits between them, and it is the only one of the three
+whose insertion is bounded in the worst case rather than on average. A skew
+link touches at most three nodes, and an insertion costs 14 to 19 ns at every
+size, from n = 1 000 to n = 1 000 000. Folding one-key heaps into a full one
+costs 41 to 51 ns a meld, against the binomial heap's 76 to 99 ns. Extraction
+is where it pays: rank-0 children are reinserted one at a time and both lists
+are normalized before the merge, so a drain at n = 1 000 000 costs 963 ns,
+1.6 times the binomial heap's. On balance its aggregate is half the binomial
+heap's -- 5.10 against 9.94 -- because three of the six scenarios are
+insertion alone, and there it is five to seven times faster.
 
 The radix heap is not in that aggregate: unconstrained churn can insert below
 its last extracted key, so it runs only the monotone scenarios. Its cost per
 operation is bounded by the key range and not by `n`, which the measurements
-bear out — over three decades of size a drained key goes from 183.15 ns to
-236.98 ns, and an inserted one from 18.38 ns to 17.85 ns.
+bear out — over three decades of size a drained key goes from 181.31 ns to
+237.52 ns, and an inserted one from 17.60 ns to 17.76 ns.
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
 the [interactive charts](https://kanigsson.github.io/heaps/) plot the same
@@ -104,7 +117,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 ### Array-backed node pools
 
-- Skew binomial heap
 - Rank-pairing heap
 - AA tree
 - AVL tree

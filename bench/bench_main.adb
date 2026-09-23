@@ -31,6 +31,7 @@ with Bench.Open_Heap;
 with Bench.Open_Proved_Heap;
 with Bench.Pairing_Heap;
 with Bench.Radix_Heap;
+with Bench.Skew_Binomial_Heap;
 with Bench.Skew_Heap;
 with Bench.Sorted_Heap;
 with Bench.Sorted_Linked_Heap;
@@ -79,6 +80,7 @@ begin
    Bench.Binary_Heap.Runner.Run (Sizes);
    Bench.Binomial_Heap.Runner.Run (Sizes);
    Bench.Fibonacci_Heap.Runner.Run (Sizes);
+   Bench.Skew_Binomial_Heap.Runner.Run (Sizes);
    Bench.Tournament_Heap.Runner.Run (Sizes);
    Bench.Block_Min_Heap.Runner.Run (Beap_Sizes);
    Bench.Dary_4.Runner.Run (Sizes);
@@ -103,6 +105,7 @@ begin
    Bench.Binary_Heap.Meld_Runner.Run (Sizes);
    Bench.Binomial_Heap.Meld_Runner.Run (Sizes);
    Bench.Fibonacci_Heap.Meld_Runner.Run (Sizes);
+   Bench.Skew_Binomial_Heap.Meld_Runner.Run (Sizes);
    Bench.Tournament_Heap.Meld_Runner.Run (Sizes);
    Bench.Dary_4.Meld_Runner.Run (Sizes);
    Bench.Dary_8.Meld_Runner.Run (Sizes);

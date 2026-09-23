@@ -19,6 +19,8 @@ with Heaps.Bucket;
 with Heaps.Dary;
 with Heaps.Fibonacci;
 with Heaps.Fibonacci_Pool;
+with Heaps.Skew_Binomial;
+with Heaps.Skew_Binomial_Pool;
 with Heaps.Interval;
 with Heaps.Leftist_Pool;
 with Heaps.Min_Max;
@@ -1008,6 +1010,7 @@ procedure Heaps_Test is
    package Arena renames Heaps.Leftist_Pool;
    package Binomial_Arena renames Heaps.Binomial_Pool;
    package Fibonacci_Arena renames Heaps.Fibonacci_Pool;
+   package Skew_Binomial_Arena renames Heaps.Skew_Binomial_Pool;
    package Skew_Arena renames Heaps.Skew_Pool;
    package Pair_Arena renames Heaps.Pairing_Pool;
 
@@ -1677,6 +1680,18 @@ procedure Heaps_Test is
       Extract_Min => Fibonacci_Arena.Extract_Min,
       Meld        => Fibonacci_Arena.Meld);
 
+   package Skew_Binomial_Suite is new Arena_Suite
+     (Kind        => "skew binomial",
+      Nodes       => Skew_Binomial_Arena.Nodes,
+      Clear       => Skew_Binomial_Arena.Clear,
+      Room        => Skew_Binomial_Arena.Room,
+      Is_Empty    => Skew_Binomial_Arena.Is_Empty,
+      Size_Of     => Skew_Binomial_Arena.Size_Of,
+      Peek_Min    => Skew_Binomial_Arena.Peek_Min,
+      Insert      => Skew_Binomial_Arena.Insert,
+      Extract_Min => Skew_Binomial_Arena.Extract_Min,
+      Meld        => Skew_Binomial_Arena.Meld);
+
    package Skew_Suite is new Arena_Suite
      (Kind        => "skew",
       Nodes       => Skew_Arena.Nodes,
@@ -1828,9 +1843,120 @@ procedure Heaps_Test is
              "fibonacci: interleaved churn leaked no node");
    end Test_Fibonacci_Boundaries;
 
+   --  Every insertion into a list whose two front trees share a rank is a
+   --  skew link, and three nodes are the fewest that make one, so an arena
+   --  of three is the smallest in which the full arena is a single skew
+   --  tree. Ascending and descending keys take the two kinds of skew link
+   --  -- the new node above both trees, or under their winner -- every
+   --  time, and a full arena drained in order checks both.
+   procedure Test_Skew_Binomial_Boundaries is
+      pragma Unevaluated_Use_Of_Old (Allow);
+      pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
+                               Assert => Ignore, Loop_Invariant => Ignore);
+      package One is new Heaps.Skew_Binomial (Capacity => 1);
+      package Three is new Heaps.Skew_Binomial (Capacity => 3);
+      package Arena renames Skew_Binomial_Arena;
+      Single : One.Tree := 0;
+      Small : Three.Tree := 0;
+      T, U : Arena.Tree := 0;
+      K : Key_Type;
+   begin
+      One.Clear;
+      for Pass in 1 .. 2 loop
+         One.Insert (Single, Key_Type'First);
+         Check (One.Room = 0 and then One.Size_Of (Single) = 1,
+                "skew binomial: singleton fills its arena");
+         One.Extract_Min (Single, K);
+         Check (K = Key_Type'First and then Single = 0 and then One.Room = 1,
+                "skew binomial: singleton slot can be reused");
+      end loop;
+
+      Three.Clear;
+      for Descending in Boolean loop
+         for I in 1 .. 3 loop
+            Three.Insert (Small, Key_Type (if Descending then 4 - I else I));
+         end loop;
+         Check (Three.Room = 0 and then Three.Size_Of (Small) = 3,
+                "skew binomial: three nodes fill the arena");
+         for I in 1 .. 3 loop
+            Three.Extract_Min (Small, K);
+            Check (K = Key_Type (I), "skew binomial: skew tree drains");
+         end loop;
+         Check (Small = 0 and then Three.Room = 3,
+                "skew binomial: skew tree gave its slots back");
+      end loop;
+
+      for Descending in Boolean loop
+         Arena.Clear;
+         for I in 1 .. Arena.Nodes loop
+            Arena.Insert
+              (T, Key_Type (if Descending then Arena.Nodes - I else I - 1));
+         end loop;
+         Check (Arena.Room = 0 and then Arena.Size_Of (T) = Arena.Nodes,
+                "skew binomial: monotone fill of a full arena");
+         for I in 1 .. Arena.Nodes loop
+            Arena.Extract_Min (T, K);
+            Check (K = Key_Type (I - 1),
+                   "skew binomial: monotone fill drains in order");
+         end loop;
+         Check (T = 0 and then Arena.Room = Arena.Nodes,
+                "skew binomial: full drain restores all slots");
+      end loop;
+
+      --  Fill the entire arena as two heaps and meld them, so that the
+      --  carry runs through every rank of the result.
+      Arena.Clear;
+      for I in 1 .. Arena.Nodes loop
+         if I < Arena.Nodes / 2 then
+            Arena.Insert (T, Key_Type (Arena.Nodes - I));
+         else
+            Arena.Insert (U, Key_Type (Arena.Nodes - I));
+         end if;
+      end loop;
+      Check (Arena.Room = 0, "skew binomial: full arena");
+      Arena.Meld (T, U);
+      Check (U = 0 and then Arena.Size_Of (T) = Arena.Nodes
+             and then Arena.Peek_Min (T) = 0,
+             "skew binomial: full arena meld");
+      Arena.Extract_Min (T, K);
+      Check (K = 0 and then Arena.Room = 1,
+             "skew binomial: split the highest-rank tree");
+      Arena.Insert (T, Key_Type'Last);
+      for I in 1 .. Arena.Nodes - 1 loop
+         Arena.Extract_Min (T, K);
+         Check (K = Key_Type (I), "skew binomial: drain across ranks");
+      end loop;
+      Arena.Extract_Min (T, K);
+      Check (K = Key_Type'Last and then T = 0
+             and then Arena.Room = Arena.Nodes,
+             "skew binomial: meld drain restores all slots");
+
+      --  Interleave, so that extraction meets trees whose rank-0 children
+      --  were hung under them by skew links of every rank.
+      for Round in 1 .. 64 loop
+         for I in 1 .. Round loop
+            Arena.Insert (T, Key_Type ((Round * 7919 + I * 104_729) mod 1000));
+         end loop;
+         declare
+            Before : constant Key_Type := Arena.Peek_Min (T);
+         begin
+            Arena.Extract_Min (T, K);
+            Check (K = Before
+                   and then (T = 0 or else Arena.Peek_Min (T) >= K),
+                   "skew binomial: interleaved extraction is ordered");
+         end;
+      end loop;
+      while T /= 0 loop
+         Arena.Extract_Min (T, K);
+      end loop;
+      Check (Arena.Room = Arena.Nodes,
+             "skew binomial: interleaved churn leaked no node");
+   end Test_Skew_Binomial_Boundaries;
+
 begin
    Test_Binomial_Boundaries;
    Test_Fibonacci_Boundaries;
+   Test_Skew_Binomial_Boundaries;
    Test_Radix_Buckets;
    Test_Radix_Advanced_Meld;
 
@@ -1863,6 +1989,7 @@ begin
       Leftist_Suite.Test_Arena_Churn (N);
       Binomial_Suite.Test_Arena_Churn (N);
       Fibonacci_Suite.Test_Arena_Churn (N);
+      Skew_Binomial_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
    end loop;
@@ -1877,6 +2004,7 @@ begin
       Leftist_Suite.Test_Arena (N);
       Binomial_Suite.Test_Arena (N);
       Fibonacci_Suite.Test_Arena (N);
+      Skew_Binomial_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
       Pairing_Suite.Test_Arena (N);
       Test_Beap (N);
@@ -1953,6 +2081,13 @@ begin
       Fibonacci_Suite.Test_Arena_Meld (0, N);
       Fibonacci_Suite.Test_Arena_KWay (N, 16);
 
+      Skew_Binomial_Suite.Test_Arena_Meld (N, N);
+      Skew_Binomial_Suite.Test_Arena_Meld (N, 1);
+      Skew_Binomial_Suite.Test_Arena_Meld (1, N);
+      Skew_Binomial_Suite.Test_Arena_Meld (N, 0);
+      Skew_Binomial_Suite.Test_Arena_Meld (0, N);
+      Skew_Binomial_Suite.Test_Arena_KWay (N, 16);
+
       Skew_Suite.Test_Arena_Meld (N, N);
       Skew_Suite.Test_Arena_Meld (N, 1);
       Skew_Suite.Test_Arena_Meld (1, N);
@@ -1974,6 +2109,8 @@ begin
    Binomial_Suite.Test_Arena_KWay (1, 16);
    Fibonacci_Suite.Test_Arena_Meld (0, 0);
    Fibonacci_Suite.Test_Arena_KWay (1, 16);
+   Skew_Binomial_Suite.Test_Arena_Meld (0, 0);
+   Skew_Binomial_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);
    Skew_Suite.Test_Arena_KWay (1, 16);
    Pairing_Suite.Test_Arena_Meld (0, 0);

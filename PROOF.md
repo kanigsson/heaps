@@ -1204,3 +1204,180 @@ drain, churn, balanced and lopsided melds with a bystander tree, k-way folds
 -- and through a boundary test of its own: a capacity-1 arena, a full arena
 of singleton roots consolidated by one extraction, and interleaved insertion
 and extraction.
+
+# The skew binomial heap
+
+`Heaps.Skew_Binomial` is the fifth arena and a direct test of a prediction.
+The section *A weaker structure is not a harder proof* named it: a structure
+whose invariant exists only to support an asymptotic bound pays for that
+invariant in every obligation and is repaid in none, so the skew binomial heap
+should be a cheaper proof than its bounded sibling. The pairing section then
+added the caveat that the cost can move from the predicate into the program
+when the bound is what keeps a recursion shallow. Both held, and the unit is
+where the two rules meet.
+
+The unit was written from `Heaps.Binomial`: the same node record, free chain,
+cached models and ghost accounting. Its first proof run discharged 787 of 793
+checks at `--level=2`, and `--level=4` discharged the rest without a hint
+being added.
+
+## The invariant lost every clause about order
+
+A binomial tree of rank r has exactly `2**r` nodes and children of ranks
+r - 1 down to 0, and the binomial unit states both: the child forest holds
+`Weight (Rank) - 1` nodes, a child's rank is one less than its parent's, a
+sibling's rank is smaller, and the list is below `2 * Weight (Rank)`. Behind
+them sit the exponential `Weight`, hidden from structural VCs, and the
+`Weight_Laws` lemma that exposes it where a link needs the doubling law.
+
+A skew binomial tree of rank r has somewhere between `2**r` and `2**(r+1) - 1`
+nodes, a node's children do not come in rank order, and a root list may begin
+with two trees of one rank. None of that is observable through a contract, so
+none of it went into the invariant. What a rank needs from the invariant is
+only that it stays in range when a link increments it, and one linear clause
+gives that:
+
+```ada
+      and then S.Links (I).Rank <= Size_Of_Node (S, S.Links (I).Child)
+```
+
+A tree of rank r holds at least r + 1 nodes. Linking two such trees gives at
+least 2r + 2, which is enough for rank r + 1; a skew link adds a node on top of
+that. The bound is linear where the true one is logarithmic, and it suffices
+because the only thing that consumes it is a range check. `Weight`, its
+hiding, and `Weight_Laws` are gone, and `Rank_Type` is `Extended_Index`.
+
+The same reasoning removes rank from the termination arguments. The binomial
+unit's merge decreases the larger of two ranks, which needs ranks to decrease
+along a list. Here every recursion decreases a *list size*: `Size` counts a
+node's sibling suffix, so taking the front off a list shrinks it, whatever the
+ranks are. A variant should be the quantity that the flat invariant already
+orders, not the one the algorithm happens to be organised by.
+
+## Order is the algorithm's business, and the code must be total without it
+
+Dropping the order clauses has one visible cost in the program. Okasaki's
+`ins_tree` links a tree with the front of a list whenever its rank is not
+smaller, relying on the list's order to make the two ranks equal. The linking
+subprogram requires equal ranks, so that its result can be given the next
+rank, and the proof cannot supply them from an order it does not know. The
+test is therefore on equality, and a tree whose rank is larger than the
+front's is prepended. In a well-formed heap that branch is never taken; the
+proof only needs it to be correct, and prepending is.
+
+What the invariant does not state, the proof does not check. The shape --
+tree sizes within `[2**r, 2**(r+1) - 1]`, strictly increasing ranks after the
+first two, trees of positive rank reversed into increasing order on
+extraction -- was checked instead by a throwaway harness. It is a generic
+child that reads the private links and walks the root list after every
+operation of a fill, a churn, repeated melds, and ascending and descending
+runs of 10**5 keys. As elsewhere in the collection, the bounds are ensured by
+construction and measurement, not by contract.
+
+## One primitive for three links
+
+A simple link, the two kinds of skew link, and the adoption of a rank-0 node
+all put one isolated tree at the head of another's child list. `Adopt` does
+exactly that, with the new rank as a parameter:
+
+```ada
+   procedure Adopt (P, C : Slot; New_Rank : Rank_Type)
+     with Pre => ... and then Keys (P) <= Keys (C)
+                 and then New_Rank
+                            <= Size_Now (Links (P).Child) + Links (C).Size,
+```
+
+`Link_Equal` is an `Adopt` of the loser under the winner with the rank
+incremented. A skew link with the new node on top is two `Adopt`s under that
+node, the second setting the next rank. A skew link with the node below the
+winner is a `Link_Equal` followed by an `Adopt` that keeps the rank. The only
+heavy case analysis in the unit, which in the binomial unit is the body of
+`Link_Equal`, is written once, and its precondition says what each caller has
+to know: the keys are in order at the two roots and the new rank fits the new
+child forest. A different parameter is the whole difference between the three
+kinds of link.
+
+## Frames carry across five calls when they rewrite
+
+`Extract_Min` is five steps: detach the minimum's tree from the list, cut its
+children loose, release the node, walk the children (skew-inserting the rank-0
+ones and reversing the rest onto a list), and meld that list with the heap.
+Every bystander root has to come out of all five with its model unchanged, and
+the final model is a chain of equalities through all five contracts.
+
+Every "unchanged" clause in the unit states `KM.Multiset_Logic_Equal` from the
+start, following the Fibonacci section *Frames compare models by logical
+equality*, so a model that one step leaves alone is the same value in the
+next step's hypothesis. The whole multiset argument of the extraction is one
+null-bodied lemma, `Extract_Model`, whose parameters are read straight out of
+the snapshots of the steps it spans.
+
+The one new ghost predicate is about distinctness rather than models. Lists
+pass through several calls in a row here -- `Normalize` feeds `Merge_Trees`,
+`Walk` hands two lists to `Meld_Lists` -- and each consumer needs its operands
+to be different roots. `From` says it once, in every postcondition that
+returns a list:
+
+```ada
+   function From (S : Snapshot; R, A, B : Tree; C : Tree := 0) return Boolean
+   is
+     (if R /= 0 and then Is_Root (S, R) then R = A or else R = B or else R = C)
+```
+
+A result that was already a root is one of the lists consumed. Any other root
+is then not the result, and two results of different calls are different. The
+binomial unit has this as an inline clause of `Merge` and nowhere else.
+
+## No size preconditions
+
+The binomial unit's `Meld` requires the two sizes to fit the arena, and its
+`Extract_Min` requires `Room < Capacity`. Neither is here. Two distinct roots
+hold no more nodes than the arena between them, and the ghost total says so
+through the two-root bound lemma the Fibonacci unit already had. `Prepend` and
+`Adopt` call it on their two operands before writing a size, so every internal
+subprogram has the size bound for free. The public contracts are the Fibonacci
+unit's, word for word.
+
+## Recursion is shallow, and the proof does not need to know why
+
+The pairing section's rule was that dropping a structure's bound can buy a
+different program, because the bound may be what keeps a recursion shallow.
+The skew binomial heap keeps its bound -- the algorithm maintains it, only
+the invariant does not state it -- so every recursion here is as deep as a
+root list or a child list, which is logarithmic. `Merge_Trees`, `Ins_Tree`,
+`Detach` and `Walk` are all recursive, and none needed an iterative rewrite.
+Termination is proved from sizes; depth follows from the shape the harness
+checked. That is the best case of the rule: the bound is paid for in the
+algorithm, where it is free, and not in the proof.
+
+## Numbers
+
+`heaps-skew_binomial.adb` is 1 139 lines with 73 `Assert` and `Loop_Invariant`
+pragmas. The binomial unit has 778 lines and 76 pragmas, and the Fibonacci unit
+1 779 and 227. The extra length against the binomial unit is contracts, not
+assertions: the unit has fifteen internal subprograms where the binomial unit
+has eight, and each carries a postcondition of the same shape.
+
+The symbolic-capacity instance discharges all 793 checks at `--level=4` in
+1 minute 45 seconds of wall time at `-j32` on this machine, from a session
+cleaned by hand for the reason recorded above. There are no assumptions or
+exemptions:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 -u heaps-skew_binomial_proof.adb --report=fail
+```
+
+From a clean session `--level=2` leaves 4 checks, all of them prover timeouts:
+two clauses of `Node_In_Use` (the size equation in `Adopt` and the model
+equation after the children are cut loose in `Extract_Min`), the final model
+assertion of `Adopt`, and the variant of the equal-rank recursion in
+`Merge_Trees`. That puts the unit with the other arenas, proved at
+`--level=4`. The complete `--level=4` project run discharges all 12 049
+checks.
+
+The runtime suite drives the unit through the shared arena suite and through
+boundary tests of its own: a capacity-1 arena; a capacity-3 arena filled in
+ascending and descending order, the smallest in which a skew link makes the
+whole arena one tree, and the two orders take the two kinds of skew link; a
+full arena filled monotonically in both directions and drained; a full arena
+melded from two heaps; and interleaved insertion and extraction.
