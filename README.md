@@ -68,31 +68,6 @@ binomial        9.94  ███████████████████�
 min-max tourn.  14.28 ████████████████████████████████████████████████████████████████+
 ```
 
-The three binomial forests put the work in different places. The binomial
-heap links eagerly on insertion, so an insertion costs 47 to 99 ns and grows
-with the carry chain. The Fibonacci heap defers every link to the next
-extraction: an insertion costs 4.1 to 4.9 ns at every size and a meld at most
-52 ns, where the binomial heap's meld grows to 613 ns. Its first extraction
-after a fill then links the million singleton roots, and a drain at
-n = 1 000 000 costs 684 ns against the binomial heap's 604 ns.
-
-The skew binomial heap sits between them, and it is the only one of the three
-whose insertion is bounded in the worst case rather than on average. A skew
-link touches at most three nodes, and an insertion costs 14 to 19 ns at every
-size, from n = 1 000 to n = 1 000 000. Folding one-key heaps into a full one
-costs 41 to 51 ns a meld, against the binomial heap's 76 to 99 ns. Extraction
-is where it pays: rank-0 children are reinserted one at a time and both lists
-are normalized before the merge, so a drain at n = 1 000 000 costs 963 ns,
-1.6 times the binomial heap's. On balance its aggregate is half the binomial
-heap's -- 5.10 against 9.94 -- because three of the six scenarios are
-insertion alone, and there it is five to seven times faster.
-
-The radix heap is not in that aggregate: unconstrained churn can insert below
-its last extracted key, so it runs only the monotone scenarios. Its cost per
-operation is bounded by the key range and not by `n`, which the measurements
-bear out — over three decades of size a drained key goes from 181.31 ns to
-237.52 ns, and an inserted one from 17.60 ns to 17.76 ns.
-
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
 the [interactive charts](https://kanigsson.github.io/heaps/) plot the same
 run with the metric, the sizes and the entries selectable.
