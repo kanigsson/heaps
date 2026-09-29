@@ -1381,3 +1381,115 @@ ascending and descending order, the smallest in which a skew link makes the
 whole arena one tree, and the two orders take the two kinds of skew link; a
 full arena filled monotonically in both directions and drained; a full arena
 melded from two heaps; and interleaved insertion and extraction.
+
+# The rank-pairing heap
+
+`Heaps.Rank_Pairing` is the sixth arena. A rank-pairing heap is a list of
+half-trees -- a root with a left subtree only, whose keys are no smaller than
+the root's -- and a half-tree stored with first-child and next-sibling links
+is exactly a node and its child list. Linking two half-trees of rank r makes
+the loser the winner's left child and hands it the winner's old left subtree
+as its right one; in child-list terms, the loser goes to the front of the
+winner's children. That is `Link_Equal` of the Fibonacci unit, unchanged.
+
+The collection has no decrease-key, and decrease-key is where the rank-pairing
+heap differs from everything before it: it cuts a subtree, and the two rank
+rules exist to bound what the cut may leave behind. Without it no node is
+ever cut, every half-tree is perfect, and the forest is a binomial forest
+with the Fibonacci unit's invariant. What is left of the algorithm is how
+extraction links: in *one pass*. A tree whose rank's entry in the table is
+taken is linked with it once, and the winner goes onto an output list, not
+back into the table. The Fibonacci unit carries the winner up until it finds
+a free rank.
+
+The unit was therefore written from `Heaps.Fibonacci`, keeping everything up
+to the rank table and replacing the extraction. Its first proof run
+discharged 1 371 of 1 390 checks at `--level=2`, and `--level=4` discharged
+the rest without a hint being added.
+
+## The state passed between phases is a pair, and it gets one name
+
+The Fibonacci section *Split the extraction where the table is the only thing
+passed on* describes three phases that pass one table between them. Here
+they pass a table and an output list, and every clause that named the table
+now names both: its model, its soundness, and which heads are in it. Stating
+each clause twice would double the frame conditions of every phase. Three
+ghost functions say them once:
+
+```ada
+   function In_Acc (T : Table_Type; O : Tree; X : Slot) return Boolean is
+     (In_Table (T, X) or else X = O);
+
+   function Acc_Sound (S : Snapshot; T : Table_Type; O : Tree) return Boolean;
+   --  The table is sound, and O is empty or a head that is its minimum and
+   --  is not in the table
+
+   function Acc_Model (S : Snapshot; T : Table_Type; O : Tree)
+     return KM.Multiset is
+     (KM.Sum (Table_Model (S, T, Max_Rank), Sub_Of (S, O)));
+```
+
+`Scatter_Children`, `Scatter_List` and the `Extract_Min` that calls them are
+then the Fibonacci unit's, with `In_Table (Table, Y)` read as
+`In_Acc (Table, Out_List, Y)` and `Table_Model` as `Acc_Model`, and they prove
+as the originals did. The Fibonacci unit's `Place` claimed that every entry
+of the table afterwards was the placed tree or an old entry. That clause
+becomes the same statement about `In_Acc`, and since the output list's head
+changes as trees are merged into it, it is what shows that no head from
+outside the pass ever joins it.
+
+## Keep the minimum at the head as the list grows
+
+The output list is a root list, and the heap's invariant wants the minimum at
+its head. The Fibonacci unit's `Gather` makes one pass over the table to find
+the smallest root before it links anything, so that it can put that root in
+front at the end. With an output list growing during the scatter phases,
+that would need a second scan, over a list and not a table.
+
+It is cheaper to keep the output list with its minimum in front all along.
+Every push onto it is the operation `Meld` already performs: append the list
+with the larger head behind the other. `Merge_Root` is that operation with an
+internal contract instead of `Meld`'s public one, stated with `Frame` and
+`Origins` like the other primitives, and it is the only new executable
+subprogram besides the new `Place`. `Gather` is then a
+single loop that merges each entry left in the table into the output list, and
+its loop invariant is `Acc_Sound` and `Acc_Model` again. It is shorter than
+the Fibonacci unit's by the whole first pass.
+
+The same choice makes `Place` loop-free. The Fibonacci unit's `Place` had
+seven loop invariants, for a carry that could run to the top rank. Here there
+is one link or none, and the proof is a straight-line sequence of assertions
+whose multiset argument is one null-bodied lemma, `Place_Model`, that moves
+the entry out of the table sum and the linked pair into the output list.
+
+## Numbers
+
+`heaps-rank_pairing.adb` is 1 822 lines with 223 `Assert` and `Loop_Invariant`
+pragmas, against the Fibonacci unit's 1 779 and 227: the extraction is longer
+by the second component of every frame clause and shorter by the carry loop
+and the minimum scan. The specification is the Fibonacci unit's, word for
+word, apart from its description.
+
+The symbolic-capacity instance discharges all 1 390 checks at `--level=4` in
+4 minutes 53 seconds of wall time at `-j32` on this machine, from a clean
+session, with no assumptions or exemptions:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 -u heaps-rank_pairing_proof.adb --report=fail
+```
+
+The complete project run was not repeated for this unit.
+
+In the benchmark the one-pass extraction is the cheaper one when trees are
+few and small, and the dearer one once the forest is large: a drain costs 167
+ns at n = 1 000 against the Fibonacci heap's 216, and 532 ns against 569 at n
+= 1 000 000, but churn and replace-forward at n = 1 000 000 cost 246 and 199
+ns against 220 and 172. The likely reason, not measured, is that trees one
+pass leaves unlinked are passed over again by the next extraction.
+
+The runtime suite drives the unit through the shared arena suite and through
+the Fibonacci unit's boundary tests: a capacity-1 arena; a full arena of
+singleton roots melded from two lists, extracted once -- which here links the
+roots in pairs instead of consolidating them -- and drained across every rank;
+and interleaved insertion and extraction, in which each pass starts from the
+trees the earlier passes did not link.

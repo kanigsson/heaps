@@ -27,6 +27,8 @@ with Heaps.Min_Max;
 with Heaps.Min_Max_Tournament;
 with Heaps.Open_Proved;
 with Heaps.Pairing_Pool;
+with Heaps.Rank_Pairing;
+with Heaps.Rank_Pairing_Pool;
 with Heaps.Radix;
 with Heaps.Skew_Pool;
 with Heaps.Sorted;
@@ -1013,6 +1015,7 @@ procedure Heaps_Test is
    package Skew_Binomial_Arena renames Heaps.Skew_Binomial_Pool;
    package Skew_Arena renames Heaps.Skew_Pool;
    package Pair_Arena renames Heaps.Pairing_Pool;
+   package Rank_Pairing_Arena renames Heaps.Rank_Pairing_Pool;
 
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
@@ -1680,6 +1683,18 @@ procedure Heaps_Test is
       Extract_Min => Fibonacci_Arena.Extract_Min,
       Meld        => Fibonacci_Arena.Meld);
 
+   package Rank_Pairing_Suite is new Arena_Suite
+     (Kind        => "rank-pairing",
+      Nodes       => Rank_Pairing_Arena.Nodes,
+      Clear       => Rank_Pairing_Arena.Clear,
+      Room        => Rank_Pairing_Arena.Room,
+      Is_Empty    => Rank_Pairing_Arena.Is_Empty,
+      Size_Of     => Rank_Pairing_Arena.Size_Of,
+      Peek_Min    => Rank_Pairing_Arena.Peek_Min,
+      Insert      => Rank_Pairing_Arena.Insert,
+      Extract_Min => Rank_Pairing_Arena.Extract_Min,
+      Meld        => Rank_Pairing_Arena.Meld);
+
    package Skew_Binomial_Suite is new Arena_Suite
      (Kind        => "skew binomial",
       Nodes       => Skew_Binomial_Arena.Nodes,
@@ -1843,6 +1858,87 @@ procedure Heaps_Test is
              "fibonacci: interleaved churn leaked no node");
    end Test_Fibonacci_Boundaries;
 
+   --  Insertion and meld leave every tree a singleton root until the next
+   --  extraction, and an extraction links each tree at most once, so the
+   --  arena reaches its highest rank only over many extractions after a fill.
+   procedure Test_Rank_Pairing_Boundaries is
+      pragma Unevaluated_Use_Of_Old (Allow);
+      pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
+                               Assert => Ignore, Loop_Invariant => Ignore,
+                               Loop_Variant => Ignore);
+      package One is new Heaps.Rank_Pairing (Capacity => 1);
+      Single : One.Tree := 0;
+      T, U : Rank_Pairing_Arena.Tree := 0;
+      K : Key_Type;
+   begin
+      One.Clear;
+      for Pass in 1 .. 2 loop
+         One.Insert (Single, Key_Type'First);
+         Check (One.Room = 0 and then One.Size_Of (Single) = 1,
+                "rank-pairing: singleton fills its arena");
+         One.Extract_Min (Single, K);
+         Check (K = Key_Type'First and then Single = 0 and then One.Room = 1,
+                "rank-pairing: singleton slot can be reused");
+      end loop;
+
+      --  Fill the entire arena as two lists of singleton roots, the smaller
+      --  keys behind the larger ones, and splice them.
+      Rank_Pairing_Arena.Clear;
+      for I in 1 .. Rank_Pairing_Arena.Nodes loop
+         if I < Rank_Pairing_Arena.Nodes / 2 then
+            Rank_Pairing_Arena.Insert (T, Key_Type (Rank_Pairing_Arena.Nodes - I));
+         else
+            Rank_Pairing_Arena.Insert (U, Key_Type (Rank_Pairing_Arena.Nodes - I));
+         end if;
+      end loop;
+      Check (Rank_Pairing_Arena.Room = 0, "rank-pairing: full arena");
+      Rank_Pairing_Arena.Meld (T, U);
+      Check (U = 0
+             and then Rank_Pairing_Arena.Size_Of (T) = Rank_Pairing_Arena.Nodes
+             and then Rank_Pairing_Arena.Peek_Min (T) = 0,
+             "rank-pairing: full arena meld");
+
+      --  The singleton roots link in pairs here, and the drain carries the
+      --  ranks up one pass at a time.
+      Rank_Pairing_Arena.Extract_Min (T, K);
+      Check (K = 0 and then Rank_Pairing_Arena.Room = 1
+             and then Rank_Pairing_Arena.Size_Of (T)
+                      = Rank_Pairing_Arena.Nodes - 1,
+             "rank-pairing: one pass over a full arena");
+      Rank_Pairing_Arena.Insert (T, Key_Type'Last);
+      for I in 1 .. Rank_Pairing_Arena.Nodes - 1 loop
+         Rank_Pairing_Arena.Extract_Min (T, K);
+         Check (K = Key_Type (I), "rank-pairing: drain across rank boundaries");
+      end loop;
+      Rank_Pairing_Arena.Extract_Min (T, K);
+      Check (K = Key_Type'Last and then T = 0
+             and then Rank_Pairing_Arena.Room = Rank_Pairing_Arena.Nodes,
+             "rank-pairing: full drain restores all slots");
+
+      --  Interleave: every extraction makes one pass over the roots the
+      --  inserts since the last one left behind, on top of what the earlier
+      --  passes did not link.
+      for Round in 1 .. 64 loop
+         for I in 1 .. Round loop
+            Rank_Pairing_Arena.Insert (T, Key_Type ((Round * 7919 + I * 104_729)
+                                                 mod 1000));
+         end loop;
+         declare
+            Before : constant Key_Type := Rank_Pairing_Arena.Peek_Min (T);
+         begin
+            Rank_Pairing_Arena.Extract_Min (T, K);
+            Check (K = Before
+                   and then (T = 0 or else Rank_Pairing_Arena.Peek_Min (T) >= K),
+                   "rank-pairing: interleaved extraction is ordered");
+         end;
+      end loop;
+      while T /= 0 loop
+         Rank_Pairing_Arena.Extract_Min (T, K);
+      end loop;
+      Check (Rank_Pairing_Arena.Room = Rank_Pairing_Arena.Nodes,
+             "rank-pairing: interleaved churn leaked no node");
+   end Test_Rank_Pairing_Boundaries;
+
    --  Every insertion into a list whose two front trees share a rank is a
    --  skew link, and three nodes are the fewest that make one, so an arena
    --  of three is the smallest in which the full arena is a single skew
@@ -1956,6 +2052,7 @@ procedure Heaps_Test is
 begin
    Test_Binomial_Boundaries;
    Test_Fibonacci_Boundaries;
+   Test_Rank_Pairing_Boundaries;
    Test_Skew_Binomial_Boundaries;
    Test_Radix_Buckets;
    Test_Radix_Advanced_Meld;
@@ -1989,6 +2086,7 @@ begin
       Leftist_Suite.Test_Arena_Churn (N);
       Binomial_Suite.Test_Arena_Churn (N);
       Fibonacci_Suite.Test_Arena_Churn (N);
+      Rank_Pairing_Suite.Test_Arena_Churn (N);
       Skew_Binomial_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
@@ -2004,6 +2102,7 @@ begin
       Leftist_Suite.Test_Arena (N);
       Binomial_Suite.Test_Arena (N);
       Fibonacci_Suite.Test_Arena (N);
+      Rank_Pairing_Suite.Test_Arena (N);
       Skew_Binomial_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
       Pairing_Suite.Test_Arena (N);
@@ -2081,6 +2180,13 @@ begin
       Fibonacci_Suite.Test_Arena_Meld (0, N);
       Fibonacci_Suite.Test_Arena_KWay (N, 16);
 
+      Rank_Pairing_Suite.Test_Arena_Meld (N, N);
+      Rank_Pairing_Suite.Test_Arena_Meld (N, 1);
+      Rank_Pairing_Suite.Test_Arena_Meld (1, N);
+      Rank_Pairing_Suite.Test_Arena_Meld (N, 0);
+      Rank_Pairing_Suite.Test_Arena_Meld (0, N);
+      Rank_Pairing_Suite.Test_Arena_KWay (N, 16);
+
       Skew_Binomial_Suite.Test_Arena_Meld (N, N);
       Skew_Binomial_Suite.Test_Arena_Meld (N, 1);
       Skew_Binomial_Suite.Test_Arena_Meld (1, N);
@@ -2109,6 +2215,8 @@ begin
    Binomial_Suite.Test_Arena_KWay (1, 16);
    Fibonacci_Suite.Test_Arena_Meld (0, 0);
    Fibonacci_Suite.Test_Arena_KWay (1, 16);
+   Rank_Pairing_Suite.Test_Arena_Meld (0, 0);
+   Rank_Pairing_Suite.Test_Arena_KWay (1, 16);
    Skew_Binomial_Suite.Test_Arena_Meld (0, 0);
    Skew_Binomial_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);

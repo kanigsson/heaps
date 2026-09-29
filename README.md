@@ -20,6 +20,7 @@ Verified priority queues backed by arrays.
 | Binomial heap       | Ranked forest in a shared node arena            | `O(log n)`   | `O(log n)`     |
 | Skew binomial heap  | Skew-linked forest, worst-case constant insert  | `O(1)`       | `O(log n)`     |
 | Fibonacci heap      | Lazy binomial forest, no decrease-key           | `O(1)`       | `O(log n)`†    |
+| Rank-pairing heap   | Half-trees linked in one pass, no decrease-key  | `O(1)`       | `O(log n)`†    |
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
 | Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
 | Radix heap          | Monotone keys, one array run per bucket         | `O(log U)`   | `O(log² U)`†   |
@@ -49,23 +50,24 @@ From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
 Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
-open-proved     0.72  ██████
-open-buffered   0.87  ███████
+open-proved     0.76  ██████
+open-buffered   0.92  ███████
 binary          1.00  ████████
-8-ary           1.56  ████████████
-4-ary           1.56  ████████████
-16-ary          1.70  ██████████████
-min-max         2.05  ████████████████
-pairing         2.16  █████████████████
-fibonacci       2.19  ██████████████████
-weak            2.21  ██████████████████
-interval        2.60  █████████████████████
-skew binomial   5.10  █████████████████████████████████████████
-skew            6.57  █████████████████████████████████████████████████████
-leftist         7.16  █████████████████████████████████████████████████████████
-tournament      9.05  ████████████████████████████████████████████████████████████████+
-binomial        9.94  ████████████████████████████████████████████████████████████████+
-min-max tourn.  14.28 ████████████████████████████████████████████████████████████████+
+4-ary           1.66  █████████████
+8-ary           1.67  █████████████
+16-ary          1.81  ██████████████
+pairing         2.08  █████████████████
+fibonacci       2.13  █████████████████
+min-max         2.17  █████████████████
+weak            2.34  ███████████████████
+rank-pairing    2.39  ███████████████████
+interval        2.74  ██████████████████████
+skew binomial   5.00  ████████████████████████████████████████
+skew            7.22  ██████████████████████████████████████████████████████████
+leftist         7.31  ██████████████████████████████████████████████████████████
+tournament     10.01  ████████████████████████████████████████████████████████████████+
+binomial       10.63  ████████████████████████████████████████████████████████████████+
+min-max tourn. 15.33  ████████████████████████████████████████████████████████████████+
 ```
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
@@ -92,7 +94,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 
 ### Array-backed node pools
 
-- Rank-pairing heap
 - AA tree
 - AVL tree
 
