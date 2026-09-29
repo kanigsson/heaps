@@ -15,6 +15,7 @@
 
 with Ada.Command_Line;
 with Bench;
+with Bench.AVL_Heap;
 with Bench.Beap_Heap;
 with Bench.Binomial_Heap;
 with Bench.Binary_Heap;
@@ -82,6 +83,7 @@ begin
    Bench.Binomial_Heap.Runner.Run (Sizes);
    Bench.Fibonacci_Heap.Runner.Run (Sizes);
    Bench.Rank_Pairing_Heap.Runner.Run (Sizes);
+   Bench.AVL_Heap.Runner.Run (Sizes);
    Bench.Skew_Binomial_Heap.Runner.Run (Sizes);
    Bench.Tournament_Heap.Runner.Run (Sizes);
    Bench.Block_Min_Heap.Runner.Run (Beap_Sizes);
@@ -108,6 +110,7 @@ begin
    Bench.Binomial_Heap.Meld_Runner.Run (Sizes);
    Bench.Fibonacci_Heap.Meld_Runner.Run (Sizes);
    Bench.Rank_Pairing_Heap.Meld_Runner.Run (Sizes);
+   Bench.AVL_Heap.Meld_Runner.Run (Sizes);
    Bench.Skew_Binomial_Heap.Meld_Runner.Run (Sizes);
    Bench.Tournament_Heap.Meld_Runner.Run (Sizes);
    Bench.Dary_4.Meld_Runner.Run (Sizes);

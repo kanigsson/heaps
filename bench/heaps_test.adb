@@ -10,6 +10,8 @@
 
 with Ada.Text_IO; use Ada.Text_IO;
 with Heaps;       use Heaps;
+with Heaps.AVL;
+with Heaps.AVL_Pool;
 with Heaps.Beap;
 with Heaps.Binary;
 with Heaps.Block_Min;
@@ -1016,6 +1018,7 @@ procedure Heaps_Test is
    package Skew_Arena renames Heaps.Skew_Pool;
    package Pair_Arena renames Heaps.Pairing_Pool;
    package Rank_Pairing_Arena renames Heaps.Rank_Pairing_Pool;
+   package AVL_Arena renames Heaps.AVL_Pool;
 
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type);
    procedure Test_Meld (N, M : Natural; Arity : Heaps.Dary.Arity_Type) is
@@ -1695,6 +1698,18 @@ procedure Heaps_Test is
       Extract_Min => Rank_Pairing_Arena.Extract_Min,
       Meld        => Rank_Pairing_Arena.Meld);
 
+   package AVL_Suite is new Arena_Suite
+     (Kind        => "avl",
+      Nodes       => AVL_Arena.Nodes,
+      Clear       => AVL_Arena.Clear,
+      Room        => AVL_Arena.Room,
+      Is_Empty    => AVL_Arena.Is_Empty,
+      Size_Of     => AVL_Arena.Size_Of,
+      Peek_Min    => AVL_Arena.Peek_Min,
+      Insert      => AVL_Arena.Insert,
+      Extract_Min => AVL_Arena.Extract_Min,
+      Meld        => AVL_Arena.Meld);
+
    package Skew_Binomial_Suite is new Arena_Suite
      (Kind        => "skew binomial",
       Nodes       => Skew_Binomial_Arena.Nodes,
@@ -1939,6 +1954,78 @@ procedure Heaps_Test is
              "rank-pairing: interleaved churn leaked no node");
    end Test_Rank_Pairing_Boundaries;
 
+   --  Monotone keys are the input that degenerates an unbalanced search tree
+   --  into a list, and the recursions here are as deep as the tree is high,
+   --  so a full arena filled in either order and drained is also a check
+   --  that the rotations keep it shallow. Equal keys go down either side of
+   --  a node, so a full arena of one key checks the ties.
+   procedure Test_AVL_Boundaries is
+      pragma Unevaluated_Use_Of_Old (Allow);
+      pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
+                               Assert => Ignore, Loop_Invariant => Ignore,
+                               Loop_Variant => Ignore);
+      package One is new Heaps.AVL (Capacity => 1);
+      package Arena renames AVL_Arena;
+      Single : One.Tree := 0;
+      T, U : Arena.Tree := 0;
+      K : Key_Type;
+   begin
+      One.Clear;
+      for Pass in 1 .. 2 loop
+         One.Insert (Single, Key_Type'First);
+         Check (One.Room = 0 and then One.Size_Of (Single) = 1,
+                "avl: singleton fills its arena");
+         One.Extract_Min (Single, K);
+         Check (K = Key_Type'First and then Single = 0 and then One.Room = 1,
+                "avl: singleton slot can be reused");
+      end loop;
+
+      for Descending in Boolean loop
+         Arena.Clear;
+         for I in 1 .. Arena.Nodes loop
+            Arena.Insert
+              (T, Key_Type (if Descending then Arena.Nodes - I else I - 1));
+         end loop;
+         Check (Arena.Room = 0 and then Arena.Size_Of (T) = Arena.Nodes,
+                "avl: full arena from monotone keys");
+         for I in 1 .. Arena.Nodes loop
+            Arena.Extract_Min (T, K);
+            Check (K = Key_Type (I - 1), "avl: monotone fill drains in order");
+         end loop;
+         Check (T = 0 and then Arena.Room = Arena.Nodes,
+                "avl: monotone drain restores all slots");
+      end loop;
+
+      for I in 1 .. Arena.Nodes loop
+         Arena.Insert (T, 7);
+      end loop;
+      for I in 1 .. Arena.Nodes loop
+         Arena.Extract_Min (T, K);
+         Check (K = 7 and then Arena.Size_Of (T) = Arena.Nodes - I,
+                "avl: equal keys");
+      end loop;
+
+      --  Fill the arena as two trees of interleaved keys and meld them: every
+      --  node moves across without a slot being freed or taken.
+      for I in 1 .. Arena.Nodes loop
+         if I mod 2 = 0 then
+            Arena.Insert (T, Key_Type (I));
+         else
+            Arena.Insert (U, Key_Type (I));
+         end if;
+      end loop;
+      Arena.Meld (T, U);
+      Check (U = 0 and then Arena.Room = 0
+             and then Arena.Size_Of (T) = Arena.Nodes,
+             "avl: full arena meld");
+      for I in 1 .. Arena.Nodes loop
+         Arena.Extract_Min (T, K);
+         Check (K = Key_Type (I), "avl: melded tree drains in order");
+      end loop;
+      Check (T = 0 and then Arena.Room = Arena.Nodes,
+             "avl: meld leaked no node");
+   end Test_AVL_Boundaries;
+
    --  Every insertion into a list whose two front trees share a rank is a
    --  skew link, and three nodes are the fewest that make one, so an arena
    --  of three is the smallest in which the full arena is a single skew
@@ -2053,6 +2140,7 @@ begin
    Test_Binomial_Boundaries;
    Test_Fibonacci_Boundaries;
    Test_Rank_Pairing_Boundaries;
+   Test_AVL_Boundaries;
    Test_Skew_Binomial_Boundaries;
    Test_Radix_Buckets;
    Test_Radix_Advanced_Meld;
@@ -2087,6 +2175,7 @@ begin
       Binomial_Suite.Test_Arena_Churn (N);
       Fibonacci_Suite.Test_Arena_Churn (N);
       Rank_Pairing_Suite.Test_Arena_Churn (N);
+      AVL_Suite.Test_Arena_Churn (N);
       Skew_Binomial_Suite.Test_Arena_Churn (N);
       Skew_Suite.Test_Arena_Churn (N);
       Pairing_Suite.Test_Arena_Churn (N);
@@ -2103,6 +2192,7 @@ begin
       Binomial_Suite.Test_Arena (N);
       Fibonacci_Suite.Test_Arena (N);
       Rank_Pairing_Suite.Test_Arena (N);
+      AVL_Suite.Test_Arena (N);
       Skew_Binomial_Suite.Test_Arena (N);
       Skew_Suite.Test_Arena (N);
       Pairing_Suite.Test_Arena (N);
@@ -2187,6 +2277,13 @@ begin
       Rank_Pairing_Suite.Test_Arena_Meld (0, N);
       Rank_Pairing_Suite.Test_Arena_KWay (N, 16);
 
+      AVL_Suite.Test_Arena_Meld (N, N);
+      AVL_Suite.Test_Arena_Meld (N, 1);
+      AVL_Suite.Test_Arena_Meld (1, N);
+      AVL_Suite.Test_Arena_Meld (N, 0);
+      AVL_Suite.Test_Arena_Meld (0, N);
+      AVL_Suite.Test_Arena_KWay (N, 16);
+
       Skew_Binomial_Suite.Test_Arena_Meld (N, N);
       Skew_Binomial_Suite.Test_Arena_Meld (N, 1);
       Skew_Binomial_Suite.Test_Arena_Meld (1, N);
@@ -2217,6 +2314,8 @@ begin
    Fibonacci_Suite.Test_Arena_KWay (1, 16);
    Rank_Pairing_Suite.Test_Arena_Meld (0, 0);
    Rank_Pairing_Suite.Test_Arena_KWay (1, 16);
+   AVL_Suite.Test_Arena_Meld (0, 0);
+   AVL_Suite.Test_Arena_KWay (1, 16);
    Skew_Binomial_Suite.Test_Arena_Meld (0, 0);
    Skew_Binomial_Suite.Test_Arena_KWay (1, 16);
    Skew_Suite.Test_Arena_Meld (0, 0);

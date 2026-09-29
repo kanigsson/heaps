@@ -1493,3 +1493,152 @@ singleton roots melded from two lists, extracted once -- which here links the
 roots in pairs instead of consolidating them -- and drained across every rank;
 and interleaved insertion and extraction, in which each pass starts from the
 trees the earlier passes did not link.
+
+# The AVL tree
+
+`Heaps.AVL` is the seventh arena and the collection's first search tree. The
+arena is the leftist unit's: one pool as package state, a tree named by its
+root, a cached ghost model per node, a free chain whose positions are ghost.
+The tree is not heap-ordered. Its minimum is the leftmost node, found by
+walking the left spine, and insertion and extraction each walk one path from
+the root and rotate on the way back up.
+
+## Search order against the children's models
+
+Heap order says that a node's key is below every key of its subtree, and
+the arenas state it once per node against the node's own cached model. Search
+order is two-sided, and it is stated the same way, once per node and against
+the cached model of each child:
+
+```ada
+      and then (for all E of Sub_Of (S, S.Links (I).Left) =>
+                   E <= S.Keys (I))
+      and then (for all E of Sub_Of (S, S.Links (I).Right) =>
+                   S.Keys (I) <= E)
+```
+
+That is a statement about whole subtrees made by one node, so no clause of
+the invariant looks further than a child. Ties may go either way, and nothing
+in the proof cares which: insertion sends a key equal to the node's to the
+right, and a rotation may later move equal keys to the left.
+
+## The minimum is where a walk ends, and the proof does not follow the walk
+
+`Peek_Min` descends the left spine. Its loop carries two facts about the
+current node `X` against the model of the whole tree `T`: every key below `X`
+is a key of `T`, and every key of `T` is either below `X`'s left child or no
+smaller than `X`'s key. One step down preserves both by the search order at
+`X` and at its left child, and at the bottom the left child is empty.
+
+`Extract_Min` finds the same node by a different route: a recursion down the
+left children that returns the node detached from the tree. Its contract
+promises `K = Peek_Min (T)'Old`, and relating the two walks node by node
+would be an induction over paths. Neither contract mentions a path. Both say
+the key is a lower bound of the model and belongs to it, and a lower bound
+that belongs to a multiset is its minimum, so the two keys are equal by
+antisymmetry: one assertion.
+
+## Exact heights need no balance clause
+
+The leftist unit's `Dist` and the binomial unit's ranks are bounded by an
+invariant clause that encodes the structure's shape. An AVL height is exact,
+`1 + max` of the children's, and an exact height is bounded by the size of
+its subtree whatever the shape: the invariant states that bound as a clause,
+and the three assignments that recompute a height preserve it locally.
+Nothing states that a tree is balanced. The rotations aim at balance, and
+the proof of every one of them holds for any heights, as does `Rebalance`,
+which only decides which rotation to make. The skew binomial section
+*Order is the algorithm's business* applies here in full: what the invariant
+does not state, the proof does not check. Balance is checked by the runtime
+suite, which fills a full arena with ascending and with descending keys --
+the input that turns an unbalanced search tree into a list, and in which the
+recursions here would run as deep as the arena is large -- and by the
+benchmark, whose monotone scenarios run at n = 1 000 000.
+
+## Four primitives write every link
+
+`Detach_Left`, `Detach_Right`, `Attach_Left` and `Attach_Right` are the only
+subprograms that assign a link. Each takes a root apart at one child, or puts
+one together, and preserves the invariant, so the rest of the unit never sees
+a broken tree. A rotation is four calls of them: detach the child that will
+become the root, detach that child's inner subtree, attach it to the old
+root, attach the old root under the new one. The multiset argument is one
+null-bodied lemma, and the search order needed at each attach follows from
+what the detaches promised.
+
+What made those chains prove without a hint is a frame stronger than the one
+about roots. Each primitive also promises that no model changed but its
+root's, and no link but those of its root and child. A rotation's untouched
+subtrees are not roots at any point, and that clause, `Keep`, is what carries
+their models through four calls.
+
+## A frame about roots cannot see a sibling
+
+`Ins` and `Rem_Min` recurse the leftist way: detach the child the key goes
+to, recurse on it as a tree of its own, attach the result. Their contracts
+are stated with `Frame` and `Origins`, which speak only of roots, since a
+recursion that rebalances cannot promise anything about a named inner node.
+The subtree on the other side of the detached root is not a root, and the
+recursion's contract says nothing about it. Yet the attach after it needs its
+model, to state the new model of the root.
+
+The root itself is framed, and its cached model is that sibling's model plus
+its own key, with the detached side empty. Cancelling the key and the empty
+side gives the sibling's model back. `Lemma_Right_Kept` and `Lemma_Left_Kept`
+state this once each, and are called after every recursive call and after
+the inner rotation of a double rotation. The lemma exists because the
+recursion detaches one side only. A root with both children would pin down
+only the sum of their models.
+
+## A meld that allocates nothing
+
+The arena contracts promise that a meld leaves `Room` as it was. `Rem_Min`
+returns the leftmost node as a single-node root rather than freeing it, and
+`Ins` takes a single-node root rather than a key, so `Meld` moves the nodes
+of one tree into the other and `Insert` and `Extract_Min` are the same two
+recursions with an allocation before or a release after. `Room` is then
+untouched by construction, and the loop invariant of the meld is the sum of
+two models and the two frame clauses.
+
+## State a fact in each branch that makes it
+
+Both checks that needed a hint at `--level=4` were the model and size of the
+root just after the two branches of `Ins`: facts that each branch
+establishes by its own lemma, asserted after the join. The provers did not
+combine them. Stating them at the end of each branch, before the join,
+discharged both. This is the loop lesson of the Fibonacci section *What a
+loop knows when it stops*, in a different place: a fact should be asserted
+where the state that makes it true is still in view.
+
+## Numbers
+
+`heaps-avl.adb` is 1 221 lines with 227 `Assert` and `Loop_Invariant`
+pragmas, and `heaps-avl.ads` 307. The first proof run discharged 1 010 of
+1 019 checks at `--level=2`; `--level=4` left the one check of the previous
+section, and then its companion once the first was fixed. The
+symbolic-capacity instance now discharges all 1 051 checks at `--level=4` in
+2 minutes 57 seconds of wall time at `-j32` on this machine, from a clean
+session, with no assumptions or exemptions:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 -u heaps-avl_proof.adb --report=fail
+```
+
+The complete project run was not repeated for this unit.
+
+The runtime suite drives the unit through the shared arena suite and through
+boundary tests of its own: a capacity-1 arena; a full arena filled with
+ascending keys and one with descending keys, each drained in order; a full
+arena of one repeated key; and a full arena melded from two trees of
+interleaved keys.
+
+In the benchmark the tree is the slowest of the arenas, at 17.11 times the
+binary heap at n = 1 000 000. Its costs grow with the logarithm of the size
+and not with the input order: an ascending insertion costs 92 ns at
+n = 1 000 and 305 ns at n = 1 000 000, a descending one 91 and 305 ns. That
+is what the rotations are for, and what the balance test above checks at a
+smaller size. The constant is high because every level of the recursion
+detaches a child, reattaches it and calls `Rebalance`, rewriting the size
+and height of the node even when nothing below it changed. Folding sixteen
+trees of n/16 keys into one costs 28 ms a meld at n = 1 000 000, since a meld
+moves one node at a time.
