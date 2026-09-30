@@ -1,5 +1,88 @@
 # Proof notes
 
+## Index
+
+This index was added at the end of the project. The sections below were
+written in order, as each structure was proved. This list groups them by
+the kind of lesson they teach. A section that names an older unit describes
+that unit as it was then.
+
+**Designing the invariant**
+- [Keep the invariant flat](#keep-the-invariant-flat)
+- [What the flat invariant was worth](#what-the-flat-invariant-was-worth)
+- [Split a large predicate, but do not guard the halves](#split-a-large-predicate-but-do-not-guard-the-halves)
+- [Expression functions with preconditions are opaque](#expression-functions-with-preconditions-are-opaque)
+- [Two inverse arrays beat a quantifier over pairs](#two-inverse-arrays-beat-a-quantifier-over-pairs)
+- [Cycles are ruled out by the size field, and it takes four equations](#cycles-are-ruled-out-by-the-size-field-and-it-takes-four-equations)
+- [A position where a prefix size fails](#a-position-where-a-prefix-size-fails)
+- [The regress that a position array breaks](#the-regress-that-a-position-array-breaks)
+- [A weaker structure is not a harder proof](#a-weaker-structure-is-not-a-harder-proof)
+- [The invariant was cheaper, exactly as predicted](#the-invariant-was-cheaper-exactly-as-predicted)
+- [The invariant lost every clause about order](#the-invariant-lost-every-clause-about-order)
+- [Exact heights need no balance clause](#exact-heights-need-no-balance-clause)
+
+**Choosing the model**
+- [Cache the model instead of recursing over the tree](#cache-the-model-instead-of-recursing-over-the-tree)
+- [A constant-time splice needs ghost membership](#a-constant-time-splice-needs-ghost-membership)
+- [A merge needs a range model, and it needs to run backwards](#a-merge-needs-a-range-model-and-it-needs-to-run-backwards)
+- [Search order against the children's models](#search-order-against-the-childrens-models)
+- [The model is built from the counts, and one lemma makes it pointwise](#the-model-is-built-from-the-counts-and-one-lemma-makes-it-pointwise)
+
+**Contracts, frames and bounds**
+- [Give a merge a contract about roots, not about subtrees](#give-a-merge-a-contract-about-roots-not-about-subtrees)
+- [Name the state when the state is a package](#name-the-state-when-the-state-is-a-package)
+- [Frames compare models by logical equality](#frames-compare-models-by-logical-equality)
+- [Frames carry across five calls when they rewrite](#frames-carry-across-five-calls-when-they-rewrite)
+- [A frame about roots cannot see a sibling](#a-frame-about-roots-cannot-see-a-sibling)
+- [Bound the arithmetic through the contract, not the invariant](#bound-the-arithmetic-through-the-contract-not-the-invariant)
+- [Make the bound a subtype, not a Natural](#make-the-bound-a-subtype-not-a-natural)
+- [Two bounds, when the two halves are placed one after the other](#two-bounds-when-the-two-halves-are-placed-one-after-the-other)
+- [No size preconditions](#no-size-preconditions)
+- [A meld that allocates nothing](#a-meld-that-allocates-nothing)
+
+**Shaping the code for the proof**
+- [Detach before recursing](#detach-before-recursing)
+- [Snapshot the state a step changes](#snapshot-the-state-a-step-changes)
+- [Relativize the sift; do not write a second one](#relativize-the-sift-do-not-write-a-second-one)
+- [Split the subprogram when its two halves stop talking to each other](#split-the-subprogram-when-its-two-halves-stop-talking-to-each-other)
+- [Split the extraction where the table is the only thing passed on](#split-the-extraction-where-the-table-is-the-only-thing-passed-on)
+- [The state passed between phases is a pair, and it gets one name](#the-state-passed-between-phases-is-a-pair-and-it-gets-one-name)
+- [One primitive for three links](#one-primitive-for-three-links)
+- [Four primitives write every link](#four-primitives-write-every-link)
+- [Fusing in place, so that nothing above has to be repaired](#fusing-in-place-so-that-nothing-above-has-to-be-repaired)
+- [Keep the minimum at the head as the list grows](#keep-the-minimum-at-the-head-as-the-list-grows)
+- [Order is the algorithm's business, and the code must be total without it](#order-is-the-algorithms-business-and-the-code-must-be-total-without-it)
+- [The obligations of a private pool are the obligations of a copy](#the-obligations-of-a-private-pool-are-the-obligations-of-a-copy) and [The rule](#the-rule)
+- [Proving the open entry by proving one transition](#proving-the-open-entry-by-proving-one-transition)
+
+**Loops, lemmas and hints**
+- [What a loop knows when it stops](#what-a-loop-knows-when-it-stops)
+- [The minimum is where a walk ends, and the proof does not follow the walk](#the-minimum-is-where-a-walk-ends-and-the-proof-does-not-follow-the-walk)
+- [The minimum is where the descent stops, and the lemma states a prefix](#the-minimum-is-where-the-descent-stops-and-the-lemma-states-a-prefix)
+- [Emptiness by contraposition](#emptiness-by-contraposition)
+- [State every bit property one bit at a time](#state-every-bit-property-one-bit-at-a-time)
+- [A trailing-zero count, proved](#a-trailing-zero-count-proved)
+- [Insertion is branch-free, and extraction pays for its branches in lemma calls](#insertion-is-branch-free-and-extraction-pays-for-its-branches-in-lemma-calls)
+- [State a fact in each branch that makes it](#state-a-fact-in-each-branch-that-makes-it)
+- [Recursion is shallow, and the proof does not need to know why](#recursion-is-shallow-and-the-proof-does-not-need-to-know-why)
+
+**What proof costs at run time**
+- [An aggregate is a proof convenience and a run-time cost](#an-aggregate-is-a-proof-convenience-and-a-run-time-cost)
+- [The algorithm was not cheaper, and the reason is the stack](#the-algorithm-was-not-cheaper-and-the-reason-is-the-stack)
+- [A loop that only carries assertions still runs](#a-loop-that-only-carries-assertions-still-runs)
+- [What the pair is for](#what-the-pair-is-for)
+
+**Effort and numbers**
+- [Binomial heap](#binomial-heap), [Earlier implementations](#earlier-implementations),
+  [What did not need anything](#what-did-not-need-anything)
+- [Proof level](#proof-level), [What it added up to](#what-it-added-up-to),
+  [What the arena added](#what-the-arena-added),
+  [What the prediction should have said](#what-the-prediction-should-have-said)
+- Numbers per unit: [skew](#numbers), [pairing](#numbers-1),
+  [Fibonacci](#numbers-2), [skew binomial](#numbers-3),
+  [rank-pairing](#numbers-4), [AVL](#numbers-5), [bitmap](#numbers-6)
+- [The final full run](#the-final-full-run)
+
 ## Binomial heap
 
 `Heaps.Binomial` keeps both roots and children in decreasing rank order.
@@ -36,7 +119,8 @@ gnatprove -P heaps.gpr -j12 --level=4 -u heaps-binomial_proof.adb --report=fail
 
 This discharges all 597 checks, with no assumptions or proof exemptions.
 The full project run, `gnatprove -P heaps.gpr -j12 --level=4 --report=fail`,
-discharges all 8,510 checks.
+discharged all 8,510 checks at the time, when the catalogue ended at the
+binomial heap. The final count is in *The final full run* at the end.
 
 The runtime suite covers drain, duplicate-key churn, balanced, lopsided and
 empty melds, preservation of a third heap, singleton reuse, and a full
@@ -1822,3 +1906,37 @@ cost hardly moves with n: 17 to 19 ns a drained key from n = 1 000 to
 distinct key at a time, so folding sixteen queues of 62 500 keys costs 2.8 ms
 a meld, twice the binary heap's; melding a single key into a full queue costs
 38 ns.
+
+# The final full run
+
+This run was made on 2026-09-30, when work on the collection stopped, with a
+development build of SPARK Pro 28.0w (CVC5, Z3, Alt-Ergo 2.6.1) on 32 cores:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 --report=fail
+```
+
+It covers 16,348 checks. 1,794 are discharged by flow analysis and 14,550 by
+the provers. There are no justified checks and no proof exemptions. Four
+checks were left unproved, one in each of four units:
+
+| Unit                | Check                                                 |
+|---------------------|-------------------------------------------------------|
+| `heaps-leftist.adb` | postcondition of the merge, the size of the result    |
+| `heaps-pairing.adb` | an assertion that a node is in use                    |
+| `heaps-radix.adb`   | a loop invariant bounding keys below a bucket         |
+| `heaps-fibonacci.ads` | postcondition of `Insert`, the model after the add  |
+
+None of these is a load effect: proving each unit on its own at `--level=4`
+leaves the same check unproved. None of these units changed since it was last
+proved. What changed is the toolchain, which was rebuilt the same morning.
+With a larger budget, all four units prove completely:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 --timeout=300 --steps=0 -u <unit>
+```
+
+So these four checks sit just beyond the level-4 limits with this build,
+and are not false. No hint was added for them, because the code is frozen.
+Anyone continuing the work with a later toolchain should look at these four
+first.

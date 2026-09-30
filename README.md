@@ -45,6 +45,11 @@ gprbuild -P bench.gpr
 gnatprove -P heaps.gpr -j0 --level=4
 ```
 
+Everything was built and proved with GNAT Pro and SPARK Pro 28.0w. Other
+versions may need proof adjustments. In the final full run, 4 of 16,348
+checks needed more than the level-4 limits (see the end of
+[PROOF.md](PROOF.md)).
+
 ## Performance
 
 From an AMD Ryzen 9 3950X, GNAT Pro 28.0w at `-O2`:
@@ -108,18 +113,13 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 ```
 
 
-## Planned
+## Not done
 
-### Array-backed node pools
-
+- Decrease-key. No heap supports it, so the benchmarks show what the
+  Fibonacci, pairing and rank-pairing heaps cost but not the operation they
+  are designed for.
 - AA tree
-
-### Integer-key queues
-
-- Bitmapped heap
-- Binary trie
-- Patricia trie
-- Calendar queue
+- Binary trie, Patricia trie, calendar queue
 
 
 ## Open benchmark entries
