@@ -1,0 +1,4 @@
+{"kind": "prove", "cmd": "cd .; head -30 obj/gnatprove/gnatprove.out 2>/dev/null; echo ===; ls obj/gnatprove | head; echo ===; grep -rn \"gnatprove\" README.md PROOF.md | head -20; echo ===; grep -rn \"Assert_And_Cut\\|Loop_Invariant\\|pragma Assume\\|Loop_Variant\" src | wc -l; grep -rnc \"Assert_And_Cut\" src/*.adb | grep -v ':0'", "output": "Summary of SPARK analysis"}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr --clean >/dev/null 2>&1; nproc; df -h . | tail -1", "output": ""}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j0 --level=4 --prover=cvc5 --output=oneline --output-header --debug-save-vcs -f > <scratch>/baseline-cvc5.txt 2>&1; echo EXIT=$?", "output": ""}
+{"kind": "prove", "cmd": "gnatprove --help 2>&1 | grep -i -A2 \"counterexample\"", "output": ""}

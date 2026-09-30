@@ -1,0 +1,12 @@
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j8 --no-inlining --level=2 --timeout=5 --memlimit=1000 -u heaps-binomial_dev_pool.ads --report=fail", "output": ""}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j8 --no-inlining --level=2 --timeout=5 --memlimit=1500 -u heaps-binomial_dev_pool.ads --report=fail", "output": ""}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j12 --no-inlining --level=2 --timeout=10 --memlimit=1500 --prover=cvc5,z3 --counterexamples=off -u heaps-binomial_dev_pool.ads --report=fail", "output": ""}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j12 --no-inlining --level=2 --proof=per_path --timeout=10 --memlimit=1500 --prover=cvc5,z3 --counterexamples=off -u heaps-binomial_dev_pool.ads --report=fail", "output": ""}
+{"kind": "prove", "cmd": "ps -eo pid,etime,comm,args | rg 'gnatwhy3 --timeout|gnatprove -P heaps' | head -8", "output": ""}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j12 --level=4 -u heaps-binomial_proof.adb --report=fail", "output": ""}
+{"kind": "prove", "cmd": "ps -eo pid,etime,comm,args | rg 'gnatwhy3 --timeout|gnatprove -P heaps' | head -8", "output": "heaps-binomial_proof.adb:15:12: warning: package \"Arena\" is not referenced [-gnatwu]"}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j12 --level=4 -u heaps-binomial_proof.adb --report=fail", "output": ""}
+{"kind": "prove", "cmd": "ps -eo pid,etime,comm,args | rg 'gnatwhy3 --timeout|gnatprove -P heaps' | head -8; git diff --stat; rg -n 'Assume|Skip_Proof|False_Positive|Intentional|Import|SPARK_Mode.*Off' src/heaps-binomial*", "output": "Success: all checks proved (597 checks).\nSummary logged in obj/gnatprove/gnatprove.out"}
+{"kind": "prove", "cmd": "gnatprove -P heaps.gpr -j12 --level=4 --report=fail", "output": ""}
+{"kind": "prove", "cmd": "ps -eo pid,etime,comm,args | rg 'gnatwhy3 --timeout|gnatprove -P heaps' | head -18; sed -n '1,80p' obj/gnatprove/gnatprove.out", "output": "Summary of SPARK analysis"}
+{"kind": "prove", "cmd": "ps -eo etime,comm,args | rg '^ *[0-9:-]+ gnatprove +gnatprove -P heaps'", "output": ""}
