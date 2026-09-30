@@ -25,12 +25,14 @@ Verified priority queues backed by arrays.
 | Block-min directory | One winner per block, B = 256                   | `O(1)`       | `O(n / B + B)` |
 | Bucket queue        | Bounded integer priorities, one chain per key   | `O(1)`       | `O(U)`         |
 | Radix heap          | Monotone keys, one array run per bucket         | `O(log U)`   | `O(log² U)`†   |
+| Bitmap queue        | Bounded integer keys, four summary levels       | `O(1)`‡      | `O(1)`‡        |
 | Unsorted array      | Baseline                                        | `O(1)`       | `O(n)`         |
 | Sorted array        | Baseline                                        | `O(n)`       | `O(1)`         |
 | Sorted linked list  | Doubly linked nodes in an array-backed pool     | `O(n)`       | `O(1)`         |
 
 Every implementation is proved. Extraction is of the minimum, except
 for the double-ended heaps, which extract either end. † amortized.
+‡ one word per level on four fixed levels, covering keys below 2²⁴.
 
 ## Build, test, and prove
 
@@ -38,38 +40,52 @@ for the double-ended heaps, which extract either end. † amortized.
 gprbuild -P bench.gpr
 ./heaps_test
 ./open_heap_test
-./bench_main --machine="an AMD Ryzen 9 3950X with GNAT Pro 27.0w at -O2" \
+./bench_main --machine="an AMD Ryzen 9 3950X with GNAT Pro 28.0w at -O2" \
   --summary --markdown=OBSERVATIONS.md --json=docs/results.js
 gnatprove -P heaps.gpr -j0 --level=4
 ```
 
 ## Performance
 
-From an AMD Ryzen 9 3950X, GNAT Pro 27.0w at `-O2`:
+From an AMD Ryzen 9 3950X, GNAT Pro 28.0w at `-O2`:
 
 ```
 Relative cost, geometric mean of the 6 single-heap scenarios at
 n = 1 000 000, binary heap = 1.00. Lower is better.
 
-open-proved     0.72  ██████
-open-buffered   0.91  ███████
+open-proved     0.75  ██████
+open-buffered   0.90  ███████
 binary          1.00  ████████
-4-ary           1.63  █████████████
-8-ary           1.63  █████████████
-16-ary          1.76  ██████████████
-pairing         1.96  ████████████████
+4-ary           1.61  █████████████
+8-ary           1.62  █████████████
+16-ary          1.75  ██████████████
+pairing         1.95  ████████████████
 min-max         2.13  █████████████████
-fibonacci       2.19  ██████████████████
-weak            2.33  ███████████████████
-rank-pairing    2.45  ████████████████████
-interval        2.59  █████████████████████
+fibonacci       2.22  ██████████████████
+weak            2.28  ██████████████████
+rank-pairing    2.33  ███████████████████
+interval        2.66  █████████████████████
 skew binomial   4.85  ███████████████████████████████████████
-skew            6.86  ███████████████████████████████████████████████████████
-leftist         7.18  █████████████████████████████████████████████████████████
-tournament      8.81  ████████████████████████████████████████████████████████████████+
-binomial       10.65  ████████████████████████████████████████████████████████████████+
-min-max tourn. 14.43  ████████████████████████████████████████████████████████████████+
-avl            17.11  ████████████████████████████████████████████████████████████████+
+skew            6.95  ████████████████████████████████████████████████████████
+leftist         7.16  █████████████████████████████████████████████████████████
+tournament      9.26  ████████████████████████████████████████████████████████████████+
+binomial       10.71  ████████████████████████████████████████████████████████████████+
+min-max tourn. 15.03  ████████████████████████████████████████████████████████████████+
+avl            16.90  ████████████████████████████████████████████████████████████████+
+```
+
+The bitmap queue keeps a count for every possible key, so it runs the same
+scenarios over keys below 2²⁰ instead of 2³⁰, against a few general heaps on
+those same keys:
+
+```
+Relative cost, geometric mean of the 6 bounded-key scenarios at
+n = 1 000 000, binary heap = 1.00. Lower is better.
+
+bitmap          0.39  ███
+open-proved     0.74  ██████
+binary          1.00  ████████
+4-ary           1.59  █████████████
 ```
 
 Per-scenario charts are in [OBSERVATIONS.md](OBSERVATIONS.md), and
@@ -101,7 +117,6 @@ The priority queue is modeled as a multiset of keys. All heaps have operations
 ### Integer-key queues
 
 - Bitmapped heap
-- Hierarchical bitmap queue
 - Binary trie
 - Patricia trie
 - Calendar queue

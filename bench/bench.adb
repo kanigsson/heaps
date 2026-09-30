@@ -37,13 +37,16 @@ package body Bench is
    Baseline : constant String := "binary";
    --  The heap every other one is expressed relative to.
 
-   Summary_Scenarios : constant array (1 .. 6) of Scenario_Type :=
-     [Head ("fill", Scenario_Width),
-      Head ("drain", Scenario_Width),
-      Head ("churn", Scenario_Width),
-      Head ("replace-forward", Scenario_Width),
-      Head ("insert-asc", Scenario_Width),
-      Head ("insert-desc", Scenario_Width)];
+   type Summary_List is array (1 .. 6) of Scenario_Type;
+
+   function Summary_Scenarios (Universe_Bits : Positive) return Summary_List
+   is
+     [Head (Label ("fill", Universe_Bits), Scenario_Width),
+      Head (Label ("drain", Universe_Bits), Scenario_Width),
+      Head (Label ("churn", Universe_Bits), Scenario_Width),
+      Head (Label ("replace-forward", Universe_Bits), Scenario_Width),
+      Head (Label ("insert-asc", Universe_Bits), Scenario_Width),
+      Head (Label ("insert-desc", Universe_Bits), Scenario_Width)];
    --  The single-heap scenarios. Meld and deque scenarios are left out: they
    --  do not run for every entry, and a meld figure is a cost per meld rather
    --  than per operation.
@@ -78,6 +81,24 @@ package body Bench is
    function Grouped (N : Positive) return String;
    function Bar (Ratio : Long_Float) return String;
 
+   -----------
+   -- Label --
+   -----------
+
+   function Label (Scenario : String; Universe_Bits : Positive) return String
+   is
+      function Short (S : String) return String is
+        (if S = "replace-forward" then "replace-fwd"
+         elsif S = "meld-accumulate" then "meld-acc"
+         elsif S = "meld-into-full" then "meld-full"
+         else S);
+   begin
+      if Universe_Bits >= Full_Bits then
+         return Scenario;
+      end if;
+      return Short (Scenario) & "-u" & Trim (Positive'Image (Universe_Bits), Both);
+   end Label;
+
    ------------
    -- Seeded --
    ------------
@@ -101,7 +122,7 @@ package body Bench is
       X := X xor Shift_Right (X, 7);
       X := X xor Shift_Left (X, 17);
       G.State := X;
-      K := Key_Type (X mod 2 ** 30);
+      K := Key_Type (X mod 2 ** Full_Bits);
    end Next;
 
    -------------------
@@ -282,7 +303,10 @@ package body Bench is
    -- Print_Summary --
    -------------------
 
-   procedure Print_Summary is
+   procedure Print_Summary (Bounded : Boolean := False) is
+
+      Scenarios : constant Summary_List :=
+        Summary_Scenarios (if Bounded then Bounded_Bits else Full_Bits);
 
       function Measured
         (Heap : Heap_Name_Type; Scenario : Scenario_Type; N : Positive)
@@ -325,7 +349,7 @@ package body Bench is
       is
          Sum : Long_Float := 0.0;
       begin
-         for S of Summary_Scenarios loop
+         for S of Scenarios loop
             declare
                Reference : constant Long_Float :=
                  Measured (Head (Baseline, Name_Width), S, N);
@@ -338,7 +362,7 @@ package body Bench is
             end;
          end loop;
 
-         return Exp (Sum / Long_Float (Summary_Scenarios'Length));
+         return Exp (Sum / Long_Float (Scenarios'Length));
       end Geometric_Mean;
 
       -----------------
@@ -388,8 +412,9 @@ package body Bench is
          New_Line;
          Put_Line
            ("Relative cost, geometric mean of the "
-            & Trim (Integer'Image (Summary_Scenarios'Length), Both)
-            & " single-heap scenarios at");
+            & Trim (Integer'Image (Scenarios'Length), Both)
+            & (if Bounded then " bounded-key" else " single-heap")
+            & " scenarios at");
          Put_Line
            ("n = " & Grouped (N) & ", " & Baseline & " heap = 1.00."
             & " Lower is better.");
@@ -647,6 +672,22 @@ package body Bench is
       New_Line;
       Put_Line ("```");
       Print_Summary;
+      Put_Line ("```");
+      New_Line;
+
+      Put_Line ("## Bounded keys");
+      New_Line;
+      Put_Line ("The bitmap queue keeps a count for every possible key, so it");
+      Put_Line ("runs over keys drawn from 0 .. 2 ** "
+                & Trim (Integer'Image (Bounded_Bits), Both) & " - 1 rather");
+      Put_Line ("than 0 .. 2 ** " & Trim (Integer'Image (Full_Bits), Both)
+                & " - 1. The same scenarios are run over that");
+      Put_Line ("range for a few general heaps, under names ending in `-u"
+                & Trim (Integer'Image (Bounded_Bits), Both) & "`, and");
+      Put_Line ("are compared only with each other.");
+      New_Line;
+      Put_Line ("```");
+      Print_Summary (Bounded => True);
       Put_Line ("```");
       New_Line;
 

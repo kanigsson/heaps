@@ -15,6 +15,11 @@ generic
    --  False for monotone queues whose insertion precondition would be
    --  violated by the benchmark's unconstrained churn stream.
 
+   Universe_Bits : Positive := Full_Bits;
+   --  Keys are drawn from 0 .. 2 ** Universe_Bits - 1. Anything below
+   --  Full_Bits runs the bounded-key variant of every scenario, under its
+   --  own name.
+
    with procedure Reset;
    --  Empty the heap under test
 

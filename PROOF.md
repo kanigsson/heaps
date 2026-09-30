@@ -1642,3 +1642,183 @@ detaches a child, reattaches it and calls `Rebalance`, rewriting the size
 and height of the node even when nothing below it changed. Folding sixteen
 trees of n/16 keys into one costs 28 ms a meld at n = 1 000 000, since a meld
 moves one node at a time.
+
+# The hierarchical bitmap queue
+
+`Heaps.Bitmap` is the collection's third integer-key queue and the first whose
+proof reasons about the bits of a word. It is generic in its universe, keys
+0 .. `Universe` - 1 with `Universe` up to `2**24`, and keeps one count per key
+under four levels of 64-bit summary words: a bit on the bottom level says that
+a key's count is nonzero, a bit on any level above says that a word of the
+level below is nonzero, and the top level is one word. The minimum is four
+trailing-zero counts, one per level, from the top.
+
+## The model is built from the counts, and one lemma makes it pointwise
+
+The bucket queue keeps a dense key prefix so that it can use the common model,
+`Models.Occurrences`, and the chains of that unit exist to connect a count to
+the slots that hold its key. The bitmap queue stores no key at all, and its
+model is the counts read as a multiset:
+
+```ada
+   function Model_From (C : Count_Array; From : Key_Bound)
+                        return Key_Multisets.Multiset is
+     (if From = Key_Bound'Last then Key_Multisets.Empty_Multiset
+      elsif C (From) = 0 then Model_From (C, From + 1)
+      else Key_Multisets.Add
+             (Model_From (C, From + 1), From,
+              SPARK.Big_Integers.To_Big_Integer (C (From))))
+```
+
+SPARKlib's `Add` with a count makes this one recursion rather than two. One
+recursive lemma, `Lemma_Occ`, states what it means: the number of occurrences
+of every key in the model is its count. Every multiset obligation of the unit
+then reduces to an equality of counts. An insertion changes one count, and
+the model changes by an `Add`; a meld leaves each count the sum of two, and the
+model is the `Sum` of two. Each of those is a lemma whose body is two or three
+calls of `Lemma_Occ`, with nothing in between, and none of the lemmas in
+`Heaps.Models` is used. The invariant ties the size to the model by its
+cardinality alone, which the `Add` and `Sum` postconditions keep up to date.
+The bound that makes an increment safe is `Nb_Occurence <= Cardinality`,
+which SPARKlib states.
+
+## State every bit property one bit at a time
+
+`Heaps.Words` is the only unit that sees a mask or a shift. It exports
+`Is_Set`, and `With_Bit` and `Without_Bit` whose postconditions say which bit
+changed and that every other bit did not, quantified over the 64 positions.
+Everything above it is stated through `Is_Set`, so the summary invariant is
+one quantified equation per level pair:
+
+```ada
+        (for all I in Up'Range =>
+           (for all B in Bit =>
+              Is_Set (Up (I), B)
+              = (64 * I + B <= Low'Last and then Low (64 * I + B) /= 0)))
+```
+
+Three level pairs share that predicate, and the bottom has a copy over the
+counts. One lemma per predicate covers every write to a level: one word of the
+lower level changed, the one bit above it was made to match, and no other bit
+moved. Setting a bit on insertion, clearing it on extraction, and leaving a
+word alone when the one below stays nonzero are all instances. Both lemmas
+have empty bodies. The provers discharge them as stated, including the step
+from `J` to `J / 64` and `J mod 64`.
+
+## A trailing-zero count, proved
+
+`Lowest` isolates the lowest set bit as `W and -W`, multiplies it by a De
+Bruijn constant and looks the top six bits up in a table. The postcondition is
+that bit `Lowest (W)` is set and every bit below it is clear. The table's
+correctness is one assertion over all 64 positions:
+
+```ada
+      pragma Assert
+        (for all B in Bit =>
+           Position (Shift_Right (Shift_Left (1, B) * Magic, 58)) = B);
+```
+
+The provers settle it by bit-blasting, table and all. What they did not find
+was that the isolated bit is a shift of one, which is an existential: the
+fact holds for a given position, but they do not search for the position.
+`Log2`, a ghost linear search whose loop invariant is that the bits below the
+current position are clear, supplies it as a witness. `Heaps.Words` needs
+`--level=4`; five of its checks time out at `--level=2`, among them the
+witness loop's invariant and the frame clauses of `With_Bit` and
+`Without_Bit`. Nothing is assumed: the unit uses no compiler intrinsic, whose
+contract would have been an axiom.
+
+The same code is also what GCC wants. With `-march=native` on this machine it
+compiles `Lowest` to a single `tzcnt`; without it, as the benchmark builds, to
+a negation, an `and`, a multiplication, a shift and a load.
+
+## Emptiness by contraposition
+
+Extraction needs the top word to be nonzero whenever the queue is not empty,
+which read forwards is a chain of existentials: some key has a count, so some
+bottom word is nonzero, so some middle word is. `Lemma_Nonempty` argues the
+other way. If the top word is zero, `Lemma_All_Zero` carries "every word is
+zero" down one level at a time, the counts are then all zero, the model is
+empty by a recursion that meets only the zero branch, and its cardinality
+contradicts the size. Every statement on that path is universal, and each
+lemma is a loop that calls the one-bit lemma for each position.
+
+## The minimum is where the descent stops, and the lemma states a prefix
+
+Each step of the descent is `Lemma_Descend`. Given that the words before `I`
+are zero and that `B` is the lowest set bit of word `I`, it concludes that word
+`64 * I + B` of the level below is nonzero and that every word before it is
+zero. The conclusion has the shape of the hypothesis, so four calls chain from
+the top to the counts, and the last says that every key below the one found
+has a zero count. `Lemma_Occ` turns that into the model's minimum. As in the
+AVL section *The minimum is where a walk ends*, `Extract_Min` promises
+`K = Peek_Min (H)'Old` without relating the two descents: both keys belong to
+the model and bound it from below, so they are equal.
+
+## Insertion is branch-free, and extraction pays for its branches in lemma calls
+
+Insertion sets the key's bit on every level, unconditionally, and one
+`Lemma_Update` per level proves it: a bit that was already set is an update
+that changes nothing. Extraction clears the bottom bit only when the count
+reaches zero, and a bit above only when the word below became zero, so it has
+five paths. The same four lemma calls, placed after the join, cover all of
+them. Their preconditions compare the new bit with the new lower word, which
+is the same statement on every path. Before the join the unit establishes
+that the word above each changed word had its bit set, because a nonzero count
+implies it.
+
+## A loop that only carries assertions still runs
+
+`Meld` ends by showing that the emptied source has no count left, which is a
+loop over the universe calling a lemma per key. The loop is not ghost, even
+though everything in it is, so the compiled code would still iterate over the
+2**20 keys of the benchmark instance, and GCC is only likely, not bound, to
+delete it. It moved into a ghost lemma, `Lemma_No_Counts`, where it is erased
+by the assertion policy like the rest of the ghost code. Every loop outside a
+ghost subprogram in this unit is now the meld's own.
+
+The benchmark showed what happens when that goes unnoticed. The bucket queue,
+whose `Extract_Min` contains two such loops (one over the nodes and one over
+the keys), was added to the bounded-key scenarios with the bitmap queue and
+took 12 microseconds per extraction at n = 100 000, ten times as much at ten
+times the size: drain, churn and meld are quadratic in practice. It was taken
+back out of the benchmark rather than changed here, since the bucket unit's
+proof depends on those loops being where they are.
+
+## Numbers
+
+`heaps-bitmap.adb` is 588 lines with 16 `Assert` and `Loop_Invariant`
+pragmas and sixteen ghost lemmas, and `heaps-bitmap.ads` 181. `heaps-words.adb`
+is 86 lines with 10 pragmas. The first proof run of the bitmap unit discharged
+every check at `--level=2`; the only changes after it were for the compiler
+and the test harness, not for the provers. The symbolic-universe instance
+still discharges all 371 checks at `--level=2`, in 22 seconds of wall time.
+With `Heaps.Words`, which needs `--level=4`, the two units discharge all 404
+checks at `--level=4` in 72 seconds at `-j32` on this machine, from a clean
+session, with no assumptions or exemptions:
+
+```sh
+gnatprove -P heaps.gpr -j0 --level=4 -u heaps-words.adb heaps-bitmap_proof.adb --report=fail
+```
+
+The complete project run was not repeated for these units.
+
+The runtime suite drives eight universes, 1, 64, 65, 4 096, 4 097, 262 144,
+262 145 and `2**24`, on either side of every level boundary, against the
+binary heap as an oracle: every extracted key and every peek must agree. It
+covers random fills and drains, churn, melds of both lopsided shapes and of
+empty operands, and a test of the edges: both ends of the universe, a key
+repeated past the width of a word, keys on either side of each word boundary
+on every level, and a refill after a full drain and after `Clear`, which
+catches a summary bit left set.
+
+The benchmark runs the queue over keys below `2**20`, in a new bounded-key
+section in which the binary, 4-ary, radix and open-proved entries run the same
+scenarios on the same keys. At n = 1 000 000 it costs 0.39 of the binary heap,
+as the geometric mean of the six scenarios, where the proved open entry costs
+0.74. It drains at 19 ns a key against 93, churns at 14 against 52, and its
+cost hardly moves with n: 17 to 19 ns a drained key from n = 1 000 to
+1 000 000, where the binary heap goes from 24 to 93. Its meld moves one
+distinct key at a time, so folding sixteen queues of 62 500 keys costs 2.8 ms
+a meld, twice the binary heap's; melding a single key into a full queue costs
+38 ns.

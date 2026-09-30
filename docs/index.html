@@ -84,6 +84,7 @@
         <button type="button" data-pick="none">none</button>
         <button type="button" data-pick="arrays">array heaps</button>
         <button type="button" data-pick="arenas">arenas</button>
+        <button type="button" data-pick="integer">bounded keys</button>
       </div>
     </fieldset>
   </div>
@@ -126,7 +127,9 @@
   var GROUPS = {
     "single heap": ["fill", "drain", "churn", "replace-forward", "insert-asc", "insert-desc"],
     "meld": ["meld-accumulate", "meld-into-full"],
-    "double ended": ["drain-max", "drain-both", "trim"]
+    "double ended": ["drain-max", "drain-both", "trim"],
+    "bounded keys": ["fill-u20", "drain-u20", "churn-u20", "replace-fwd-u20",
+                     "insert-asc-u20", "insert-desc-u20", "meld-acc-u20", "meld-full-u20"]
   };
   var NOTES = {
     "fill": "insert n pseudo-random keys into an empty heap",
@@ -139,18 +142,28 @@
     "meld-into-full": "fold sixteen one-key heaps into an accumulator of n keys",
     "drain-max": "extract every key from the high end",
     "drain-both": "alternate extraction from the two ends",
-    "trim": "insert a key and extract the maximum, as a bounded top-n queue does"
+    "trim": "insert a key and extract the maximum, as a bounded top-n queue does",
+    "fill-u20": "fill, with keys below 2^20",
+    "drain-u20": "drain, with keys below 2^20",
+    "churn-u20": "churn, with keys below 2^20",
+    "replace-fwd-u20": "replace-forward, with keys below 2^20",
+    "insert-asc-u20": "insert-asc; its keys are below 2^20 already",
+    "insert-desc-u20": "insert-desc; its keys are below 2^20 already",
+    "meld-acc-u20": "meld-accumulate, with keys below 2^20",
+    "meld-full-u20": "meld-into-full, with keys below 2^20"
   };
   var PICKS = {
     arrays: ["binary", "4-ary", "8-ary", "16-ary", "weak", "min-max", "interval"],
-    arenas: ["leftist", "skew", "pairing", "binomial", "skew binomial", "fibonacci", "rank-pairing", "avl"]
+    arenas: ["leftist", "skew", "pairing", "binomial", "skew binomial", "fibonacci", "rank-pairing", "avl"],
+    integer: ["binary", "4-ary", "open-proved", "radix", "bitmap"]
   };
 
   var PALETTE = [
     "#3b7dd8", "#d1495b", "#2a9d8f", "#e07a1f", "#7b5ea7", "#00838f",
     "#b5651d", "#4f772d", "#c2185b", "#5c6bc0", "#8d6e63", "#00897b",
     "#ef6c00", "#6a1b9a", "#546e7a", "#9e9d24", "#ad1457", "#0277bd",
-    "#558b2f", "#6d4c41", "#d84315", "#283593", "#00695c", "#8e24aa", "#827717"
+    "#558b2f", "#6d4c41", "#d84315", "#283593", "#00695c", "#8e24aa", "#827717",
+    "#f9a825"
   ];
   var colour = {};
   heaps.forEach(function (h, i) { colour[h] = PALETTE[i % PALETTE.length]; });

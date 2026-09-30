@@ -7,6 +7,8 @@ with Interfaces;    use Interfaces;
 
 package body Bench.Meld_Driver is
 
+   use type Key_Type;
+
    type Measure is record
       Elapsed  : Time_Span;
       Ops      : Long_Long_Integer;
@@ -15,6 +17,10 @@ package body Bench.Meld_Driver is
 
    function Accumulate (N : Positive) return Measure;
    function Into_Full (N : Positive) return Measure;
+
+   function Reduce (K : Key_Type) return Key_Type is
+     (if Universe_Bits >= Full_Bits then K else K mod 2 ** Universe_Bits)
+     with Inline;
 
    ----------------
    -- Accumulate --
@@ -33,7 +39,7 @@ package body Bench.Meld_Driver is
       for W in 1 .. Operands loop
          for I in 1 .. Each loop
             Next (G, K);
-            Insert (W, K);
+            Insert (W, Reduce (K));
          end loop;
       end loop;
 
@@ -72,12 +78,12 @@ package body Bench.Meld_Driver is
       Reset;
       for I in 1 .. N loop
          Next (G, K);
-         Insert (0, K);
+         Insert (0, Reduce (K));
       end loop;
 
       for W in 1 .. Operands loop
          Next (G, K);
-         Insert (W, K);
+         Insert (W, Reduce (K));
       end loop;
 
       Start := Clock;
@@ -132,8 +138,8 @@ package body Bench.Meld_Driver is
       end One;
 
    begin
-      One ("meld-accumulate", Accumulate'Access);
-      One ("meld-into-full", Into_Full'Access);
+      One (Label ("meld-accumulate", Universe_Bits), Accumulate'Access);
+      One (Label ("meld-into-full", Universe_Bits), Into_Full'Access);
    end Run;
 
 end Bench.Meld_Driver;

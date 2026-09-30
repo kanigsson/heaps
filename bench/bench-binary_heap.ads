@@ -22,6 +22,15 @@ package Bench.Binary_Heap is
       Insert      => Insert,
       Extract_Min => Extract_Min);
 
+   package Bounded_Runner is new Bench.Driver
+     (Heap_Name     => "binary",
+      Universe_Bits => Bounded_Bits,
+      Reset         => Reset,
+      Insert        => Insert,
+      Extract_Min   => Extract_Min);
+   --  The same heap over the bounded-key scenarios, as a reference for the
+   --  queues that only run there
+
    ----------
    -- Meld --
    ----------
@@ -41,5 +50,13 @@ package Bench.Binary_Heap is
       Insert      => Meld_Insert,
       Meld        => Meld_Meld,
       Extract_Min => Meld_Extract_Min);
+
+   package Bounded_Meld_Runner is new Bench.Meld_Driver
+     (Heap_Name     => "binary",
+      Universe_Bits => Bounded_Bits,
+      Reset         => Meld_Reset,
+      Insert        => Meld_Insert,
+      Meld          => Meld_Meld,
+      Extract_Min   => Meld_Extract_Min);
 
 end Bench.Binary_Heap;

@@ -14,6 +14,7 @@ with Heaps.AVL;
 with Heaps.AVL_Pool;
 with Heaps.Beap;
 with Heaps.Binary;
+with Heaps.Bitmap;
 with Heaps.Block_Min;
 with Heaps.Binomial;
 with Heaps.Binomial_Pool;
@@ -1746,6 +1747,226 @@ procedure Heaps_Test is
       Extract_Min => Pair_Arena.Extract_Min,
       Meld        => Pair_Arena.Meld);
 
+   --  The bitmap queue is generic in its universe, and the universes worth
+   --  testing are the ones on either side of a level boundary: a bottom word
+   --  that is partly used, a middle or upper word that has one more child
+   --  than a full one, and the largest universe, whose top word is full. The
+   --  binary heap is the oracle: both drain the same keys, in the same order.
+
+   generic
+      Universe : Index;
+   package Bitmap_Suite is
+      pragma Assertion_Policy (Ghost          => Ignore,
+                               Pre            => Ignore,
+                               Post           => Ignore,
+                               Assert         => Ignore,
+                               Loop_Invariant => Ignore,
+                               Loop_Variant   => Ignore);
+      --  The instance below must agree with the multiset library, whose
+      --  ghost code is ignored, and so it cannot inherit the checking policy
+      --  this program is built with. Its contracts are proved, and the
+      --  ghost model is not executable at a useful speed anyway.
+      procedure Test_Bitmap (N : Positive);
+      procedure Test_Bitmap_Churn (N : Positive);
+      procedure Test_Bitmap_Meld (N, M : Natural);
+      procedure Test_Bitmap_Edges;
+   end Bitmap_Suite;
+
+   package body Bitmap_Suite is
+      pragma Assertion_Policy (Ghost          => Ignore,
+                               Pre            => Ignore,
+                               Post           => Ignore,
+                               Assert         => Ignore,
+                               Loop_Invariant => Ignore,
+                               Loop_Variant   => Ignore);
+
+      package Queue is new Heaps.Bitmap (Universe);
+
+      type Queue_Access is access Queue.Heap;
+      --  A queue holds a count for every key of its universe, which is too
+      --  much for the stack at the larger universes
+
+      Kind : constant String := "bitmap" & Index'Image (Universe);
+
+      Word_Steps : constant array (1 .. 3) of Key_Type :=
+        [64, 64 * 64, 64 * 64 * 64];
+      --  The number of keys under one word of the bottom, middle and upper
+      --  levels
+
+      function Next (State : in out Long_Long_Integer) return Key_Type;
+      function Next (State : in out Long_Long_Integer) return Key_Type is
+      begin
+         State := (State * 1_103_515_245 + 12_345) mod 2_147_483_647;
+         return Key_Type (State mod Long_Long_Integer (Universe));
+      end Next;
+
+      procedure Drain_Against
+        (H : Queue_Access; Oracle : in out Heaps.Binary.Heap; What : String);
+      procedure Drain_Against
+        (H : Queue_Access; Oracle : in out Heaps.Binary.Heap; What : String)
+      is
+         K, Expected : Key_Type;
+      begin
+         Check (Queue.Size (H.all) = Heaps.Binary.Size (Oracle),
+                Kind & ": " & What & ": sizes agree");
+         while not Heaps.Binary.Is_Empty (Oracle) loop
+            Check (not Queue.Is_Empty (H.all),
+                   Kind & ": " & What & ": no key is lost");
+            exit when Queue.Is_Empty (H.all);
+            Heaps.Binary.Extract_Min (Oracle, Expected);
+            Check (Queue.Peek_Min (H.all) = Expected,
+                   Kind & ": " & What & ": peek agrees with the oracle");
+            Queue.Extract_Min (H.all, K);
+            Check (K = Expected,
+                   Kind & ": " & What & ": extraction agrees with the oracle");
+         end loop;
+         Check (Queue.Is_Empty (H.all),
+                Kind & ": " & What & ": no key is invented");
+      end Drain_Against;
+
+      procedure Test_Bitmap (N : Positive) is
+         H      : constant Queue_Access :=
+           new Queue.Heap (Extended_Index (N));
+         Oracle : Heaps.Binary.Heap (Extended_Index (N));
+         State  : Long_Long_Integer := 987_654_321;
+         K      : Key_Type;
+      begin
+         Queue.Clear (H.all);
+         for I in 1 .. N loop
+            K := Next (State);
+            Queue.Insert (H.all, K);
+            Heaps.Binary.Insert (Oracle, K);
+            Check (Queue.Size (H.all) = I, Kind & ": size after insert");
+         end loop;
+         Drain_Against (H, Oracle, "drain");
+      end Test_Bitmap;
+
+      procedure Test_Bitmap_Churn (N : Positive) is
+         H      : constant Queue_Access :=
+           new Queue.Heap (Extended_Index (N));
+         Oracle : Heaps.Binary.Heap (Extended_Index (N));
+         State  : Long_Long_Integer := 24_680;
+         K, L   : Key_Type;
+      begin
+         Queue.Clear (H.all);
+         for I in 1 .. N loop
+            K := Next (State);
+            Queue.Insert (H.all, K);
+            Heaps.Binary.Insert (Oracle, K);
+         end loop;
+
+         for I in 1 .. 4 * N loop
+            Queue.Extract_Min (H.all, K);
+            Heaps.Binary.Extract_Min (Oracle, L);
+            Check (K = L, Kind & ": churn extracts the oracle's minimum");
+            K := Next (State);
+            Queue.Insert (H.all, K);
+            Heaps.Binary.Insert (Oracle, K);
+         end loop;
+         Drain_Against (H, Oracle, "churn");
+      end Test_Bitmap_Churn;
+
+      procedure Test_Bitmap_Meld (N, M : Natural) is
+         Total  : constant Extended_Index := Extended_Index (N + M);
+         Into   : constant Queue_Access := new Queue.Heap (Total);
+         From   : constant Queue_Access := new Queue.Heap (Total + 2);
+         --  Room for the two keys inserted after the meld
+         Oracle : Heaps.Binary.Heap (Total);
+         State  : Long_Long_Integer := 13_579;
+         K      : Key_Type;
+      begin
+         Queue.Clear (Into.all);
+         Queue.Clear (From.all);
+         for I in 1 .. N loop
+            K := Next (State);
+            Queue.Insert (Into.all, K);
+            Heaps.Binary.Insert (Oracle, K);
+         end loop;
+         for I in 1 .. M loop
+            K := Next (State);
+            Queue.Insert (From.all, K);
+            Heaps.Binary.Insert (Oracle, K);
+         end loop;
+
+         Queue.Meld (Into.all, From.all);
+         Check (Queue.Is_Empty (From.all), Kind & ": meld empties the source");
+         Drain_Against (Into, Oracle, "meld");
+
+         --  The emptied source is a queue like any other
+         Queue.Insert (From.all, Key_Type (Universe) - 1);
+         Queue.Insert (From.all, 0);
+         Check (Queue.Peek_Min (From.all) = 0,
+                Kind & ": the melded-from queue is usable again");
+      end Test_Bitmap_Meld;
+
+      procedure Test_Bitmap_Edges is
+         Last   : constant Key_Type := Key_Type (Universe) - 1;
+         Cap    : constant Extended_Index := 3 * 64 + 3;
+         H      : constant Queue_Access := new Queue.Heap (Cap);
+         Oracle : Heaps.Binary.Heap (Cap);
+         K      : Key_Type;
+
+         procedure Both (Key : Key_Type);
+         procedure Both (Key : Key_Type) is
+         begin
+            Queue.Insert (H.all, Key);
+            Heaps.Binary.Insert (Oracle, Key);
+         end Both;
+      begin
+         Check (Queue.Is_Empty (H.all), Kind & ": a new queue is empty");
+
+         --  The two ends of the universe, and one key repeated past the
+         --  width of a word
+         for I in 1 .. 65 loop
+            Both (Last);
+         end loop;
+         Both (0);
+         Check (Queue.Peek_Min (H.all) = 0, Kind & ": the lowest key");
+         Queue.Extract_Min (H.all, K);
+         Heaps.Binary.Extract_Min (Oracle, K);
+         Check (Queue.Peek_Min (H.all) = Last,
+                Kind & ": the highest key, after the lowest is gone");
+
+         --  One key on each side of every word boundary at every level
+         for Step of Word_Steps loop
+            if Step <= Last then
+               Both (Step - 1);
+               Both (Step);
+               Both (Last - Step + 1);
+            end if;
+         end loop;
+         for I in 1 .. 60 loop
+            Both (Key_Type ((Long_Long_Integer (I) * 7919)
+                            mod Long_Long_Integer (Universe)));
+         end loop;
+         Drain_Against (H, Oracle, "edges");
+
+         --  After a full drain, the summary levels are clear again
+         Both (Last);
+         Drain_Against (H, Oracle, "refill");
+         Queue.Insert (H.all, 1 mod Key_Type (Universe));
+         Queue.Clear (H.all);
+         Check (Queue.Is_Empty (H.all), Kind & ": clear empties");
+         Queue.Insert (H.all, Last);
+         Check (Queue.Peek_Min (H.all) = Last,
+                Kind & ": clear leaves no stale bit");
+      end Test_Bitmap_Edges;
+
+   end Bitmap_Suite;
+
+   package Bitmap_1 is new Bitmap_Suite (1);
+   package Bitmap_64 is new Bitmap_Suite (64);
+   package Bitmap_65 is new Bitmap_Suite (65);
+   package Bitmap_4096 is new Bitmap_Suite (4_096);
+   package Bitmap_4097 is new Bitmap_Suite (4_097);
+   package Bitmap_262144 is new Bitmap_Suite (262_144);
+   package Bitmap_262145 is new Bitmap_Suite (262_145);
+   package Bitmap_Max is new Bitmap_Suite (Max_Capacity);
+
+   type Meld_Shape is array (1 .. 2) of Natural;
+   Bitmap_Meld_Shapes : constant array (1 .. 7) of Meld_Shape :=
+     [[64, 64], [64, 1], [1, 64], [64, 0], [0, 64], [0, 0], [1_000, 1_000]];
+
    procedure Test_Binomial_Boundaries is
       pragma Unevaluated_Use_Of_Old (Allow);
       pragma Assertion_Policy (Ghost => Ignore, Pre => Ignore, Post => Ignore,
@@ -2244,6 +2465,43 @@ begin
    Test_Radix_Meld (64, 0);
    Test_Radix_Meld (0, 64);
    Test_Radix_Meld (0, 0);
+
+   --  Every bitmap universe, over the same shapes as the other queues
+   for N of Churn_Sizes loop
+      Bitmap_1.Test_Bitmap_Churn (N);
+      Bitmap_64.Test_Bitmap_Churn (N);
+      Bitmap_65.Test_Bitmap_Churn (N);
+      Bitmap_4096.Test_Bitmap_Churn (N);
+      Bitmap_4097.Test_Bitmap_Churn (N);
+      Bitmap_262144.Test_Bitmap_Churn (N);
+      Bitmap_262145.Test_Bitmap_Churn (N);
+      Bitmap_Max.Test_Bitmap_Churn (N);
+   end loop;
+   for N of Sizes loop
+      Bitmap_1.Test_Bitmap (N);
+      Bitmap_64.Test_Bitmap (N);
+      Bitmap_65.Test_Bitmap (N);
+      Bitmap_4096.Test_Bitmap (N);
+      Bitmap_4097.Test_Bitmap (N);
+      Bitmap_262144.Test_Bitmap (N);
+      Bitmap_262145.Test_Bitmap (N);
+      Bitmap_Max.Test_Bitmap (N);
+   end loop;
+   for Shape of Bitmap_Meld_Shapes loop
+      Bitmap_1.Test_Bitmap_Meld (Shape (1), Shape (2));
+      Bitmap_65.Test_Bitmap_Meld (Shape (1), Shape (2));
+      Bitmap_4097.Test_Bitmap_Meld (Shape (1), Shape (2));
+      Bitmap_262145.Test_Bitmap_Meld (Shape (1), Shape (2));
+      Bitmap_Max.Test_Bitmap_Meld (Shape (1), Shape (2));
+   end loop;
+   Bitmap_1.Test_Bitmap_Edges;
+   Bitmap_64.Test_Bitmap_Edges;
+   Bitmap_65.Test_Bitmap_Edges;
+   Bitmap_4096.Test_Bitmap_Edges;
+   Bitmap_4097.Test_Bitmap_Edges;
+   Bitmap_262144.Test_Bitmap_Edges;
+   Bitmap_262145.Test_Bitmap_Edges;
+   Bitmap_Max.Test_Bitmap_Edges;
 
    --  The arena's own meld, over the same shapes, plus a k-way fold: with
    --  one pool holding every operand, folding k trees into one is the

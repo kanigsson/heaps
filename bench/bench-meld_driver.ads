@@ -16,6 +16,9 @@
 generic
    Heap_Name : String;
 
+   Universe_Bits : Positive := Full_Bits;
+   --  As for Bench.Driver: keys are drawn from 0 .. 2 ** Universe_Bits - 1
+
    with procedure Reset;
    --  Empty the accumulator and every operand
 

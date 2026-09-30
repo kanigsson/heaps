@@ -18,6 +18,7 @@ with Bench;
 with Bench.AVL_Heap;
 with Bench.Beap_Heap;
 with Bench.Binomial_Heap;
+with Bench.Bitmap_Heap;
 with Bench.Binary_Heap;
 with Bench.Block_Min_Heap;
 with Bench.Dary_4;
@@ -139,12 +140,27 @@ begin
    Bench.Open_Heap.Deque_Runner.Run (Sizes);
    Bench.Open_Proved_Heap.Deque_Runner.Run (Sizes);
 
+   --  Bounded keys: the bitmap queue, which keeps a count for every possible
+   --  key, against a few general heaps on the same key streams.
+   Bench.Binary_Heap.Bounded_Runner.Run (Sizes);
+   Bench.Dary_4.Bounded_Runner.Run (Sizes);
+   Bench.Open_Proved_Heap.Bounded_Runner.Run (Sizes);
+   Bench.Radix_Heap.Bounded_Runner.Run (Sizes);
+   Bench.Bitmap_Heap.Bounded_Runner.Run (Sizes);
+
+   Bench.Binary_Heap.Bounded_Meld_Runner.Run (Sizes);
+   Bench.Dary_4.Bounded_Meld_Runner.Run (Sizes);
+   Bench.Open_Proved_Heap.Bounded_Meld_Runner.Run (Sizes);
+   Bench.Radix_Heap.Bounded_Meld_Runner.Run (Sizes);
+   Bench.Bitmap_Heap.Bounded_Meld_Runner.Run (Sizes);
+
    declare
       Machine : constant String := Option ("--machine=", "an unnamed machine");
    begin
       for I in 1 .. Ada.Command_Line.Argument_Count loop
          if Ada.Command_Line.Argument (I) = "--summary" then
             Bench.Print_Summary;
+            Bench.Print_Summary (Bounded => True);
          end if;
       end loop;
 

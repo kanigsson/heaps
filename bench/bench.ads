@@ -29,6 +29,21 @@ package Bench is
    --  Upper bound on the number of elements any benchmark scenario puts in a
    --  heap at once. Adapters size their heap with this.
 
+   Full_Bits : constant := 30;
+   --  The key generator draws from 0 .. 2 ** Full_Bits - 1
+
+   Bounded_Bits : constant := 20;
+   --  The bounded-key scenarios draw from 0 .. 2 ** Bounded_Bits - 1 instead,
+   --  for the queues that keep a count for every possible key
+
+   function Label (Scenario : String; Universe_Bits : Positive) return String;
+   --  The name a scenario is reported under. Over the full key range it is
+   --  Scenario itself; over a smaller one it is shortened to fit the report
+   --  and suffixed with the universe, so "replace-forward" at 20 bits is
+   --  "replace-fwd-u20". Distinct names keep the two kinds of runs apart in
+   --  every chart and in the checksum comparison, since they do not see the
+   --  same keys.
+
    ---------------------------
    -- Deterministic key stream
    ---------------------------
@@ -70,12 +85,13 @@ package Bench is
    --  rather than bare JSON so that the page loading it works from disk,
    --  where fetch does not.
 
-   procedure Print_Summary;
+   procedure Print_Summary (Bounded : Boolean := False);
    --  One bar chart per size measured: each heap's cost relative to the
    --  binary heap, as the geometric mean of its ratio on each single-heap
    --  scenario. Ratios are taken scenario by scenario before being averaged,
    --  so the figure does not depend on which scenario is slowest in absolute
    --  terms. A heap missing a scenario at a size is left out of that chart.
+   --  Bounded selects the bounded-key scenarios instead of the full ones.
 
 private
 

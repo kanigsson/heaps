@@ -22,6 +22,16 @@ package Bench.Radix_Heap is
       Insert        => Insert,
       Extract_Min   => Extract_Min);
 
+   package Bounded_Runner is new Bench.Driver
+     (Heap_Name     => "radix",
+      Include_Churn => False,
+      Universe_Bits => Bounded_Bits,
+      Reset         => Reset,
+      Insert        => Insert,
+      Extract_Min   => Extract_Min);
+   --  The same heap over the bounded-key scenarios, as a reference for the
+   --  queues that only run there
+
    procedure Meld_Reset;
    procedure Meld_Insert (Which : Natural; K : Key_Type);
    procedure Meld_Meld (Which : Positive);
@@ -33,5 +43,13 @@ package Bench.Radix_Heap is
       Insert      => Meld_Insert,
       Meld        => Meld_Meld,
       Extract_Min => Meld_Extract_Min);
+
+   package Bounded_Meld_Runner is new Bench.Meld_Driver
+     (Heap_Name     => "radix",
+      Universe_Bits => Bounded_Bits,
+      Reset         => Meld_Reset,
+      Insert        => Meld_Insert,
+      Meld          => Meld_Meld,
+      Extract_Min   => Meld_Extract_Min);
 
 end Bench.Radix_Heap;

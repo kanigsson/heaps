@@ -29,6 +29,12 @@ package body Bench.Driver is
    procedure Prefill (N : Positive);
    --  Untimed: reset the heap and put N pseudo-random keys in it
 
+   function Reduce (K : Key_Type) return Key_Type is
+     (if Universe_Bits >= Full_Bits then K else K mod 2 ** Universe_Bits)
+     with Inline;
+   --  A generated key, brought into the universe. Over the full range this
+   --  is the identity, and folds away.
+
    -------------
    -- Prefill --
    -------------
@@ -40,7 +46,7 @@ package body Bench.Driver is
       Reset;
       for I in 1 .. N loop
          Next (G, K);
-         Insert (K);
+         Insert (Reduce (K));
       end loop;
    end Prefill;
 
@@ -58,6 +64,7 @@ package body Bench.Driver is
       Start := Clock;
       for I in 1 .. N loop
          Next (G, K);
+         K := Reduce (K);
          Insert (K);
          Sum := Sum + Checksum_Type (K);
       end loop;
@@ -100,7 +107,7 @@ package body Bench.Driver is
       for I in 1 .. N loop
          Extract_Min (K);
          Next (G, New_K);
-         Insert (New_K);
+         Insert (Reduce (New_K));
          Sum := Sum + Checksum_Type (K);
       end loop;
       return (Clock - Start, 2 * Long_Long_Integer (N), Sum);
@@ -121,7 +128,7 @@ package body Bench.Driver is
       Reset;
       for I in 1 .. N loop
          Next (Initial_G, K);
-         Insert (K mod 2 ** 29);
+         Insert (K mod 2 ** (Universe_Bits - 1));
       end loop;
 
       Start := Clock;
@@ -134,7 +141,11 @@ package body Bench.Driver is
       end loop;
 
       --  Initially K is below 2**29, and even one key receiving all N <=
-      --  2**20 increments of at most 2**10 remains within Key_Type.
+      --  2**20 increments of at most 2**10 remains within Key_Type. In the
+      --  bounded variant the keys start below half the universe, and with
+      --  this key stream they never reach it: the largest key inserted is
+      --  below 2**19 at every size measured. A queue whose universe a key
+      --  left would stop at an index check.
       return (Clock - Start, 2 * Long_Long_Integer (N), Sum);
    end Replace_Forward;
 
@@ -187,13 +198,15 @@ package body Bench.Driver is
          S_Descending);
 
       function Label (S : Scenario) return String is
-        (case S is
-            when S_Fill            => "fill",
-            when S_Drain           => "drain",
-            when S_Churn           => "churn",
-            when S_Replace_Forward => "replace-forward",
-            when S_Ascending       => "insert-asc",
-            when S_Descending      => "insert-desc");
+        (Bench.Label
+           ((case S is
+                when S_Fill            => "fill",
+                when S_Drain           => "drain",
+                when S_Churn           => "churn",
+                when S_Replace_Forward => "replace-forward",
+                when S_Ascending       => "insert-asc",
+                when S_Descending      => "insert-desc"),
+            Universe_Bits));
 
       function Measure_Of (S : Scenario; N : Positive) return Measure is
         (case S is
